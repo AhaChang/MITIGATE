@@ -74,7 +74,7 @@ def main(args):
 
             embed, prob_nc, prob_ad = model(features, adj)
             
-            idx_train_id = idx_train_nc[ano_label[idx_train_nc]==0]
+            idx_train_id = idx_train_nc[torch.nonzero(~torch.isin(idx_train_nc, idx_train_ad[torch.where(ano_label[idx_train_ad]==1)[0]])).squeeze()]
             loss_comm = xent(prob_nc[idx_train_id], labels[idx_train_id]) # In-distribution
             loss_an = xent(prob_ad[idx_train_ad], ano_label[idx_train_ad])
 
@@ -173,12 +173,12 @@ def main(args):
     if not os.path.exists(des_path):
         with open(des_path,'w+') as f:
             csv_write = csv.writer(f)
-            csv_head = ["model", "seed", "dataset", "init_num", "num_epochs", "strategy_ad", "strategy_nc", "nc-acc", "nc-idacc", "nc-f1-micro", "nc-f1-macro", "ad-auc", "ad-f1-macro", "A-num", "N-num"]
+            csv_head = ["model", "seed", "dataset", "init_num", "num_epochs", "strategy_ad", "strategy_nc", "alpha", "nc-acc", "nc-idacc", "nc-f1-micro", "nc-f1-macro", "ad-auc", "ad-f1-macro", "A-num", "N-num"]
             csv_write.writerow(csv_head)
 
     with open(des_path, 'a+') as f:
         csv_write = csv.writer(f)
-        data_row = ['m1', args.seed, args.dataset, args.init_num, args.max_epoch, args.strategy_ad, args.strategy_nc,test_acc_comm, test_acc_nc_id, test_f1micro_comm, test_f1macro_comm, test_auc_ano, test_f1macro_ano, abnormal_num, normal_num]
+        data_row = ['m1', args.seed, args.dataset, args.init_num, args.max_epoch, args.strategy_ad, args.strategy_nc, args.alpha, test_acc_comm, test_acc_nc_id, test_f1micro_comm, test_f1macro_comm, test_auc_ano, test_f1macro_ano, abnormal_num, normal_num]
         csv_write.writerow(data_row)
 
 

@@ -76,8 +76,8 @@ def main(args):
             if args.task_type == 'ad':
                 loss_comm = xent(prob_nc[idx_train_nc], labels[idx_train_nc]) 
             else:
-                idx_train_id = idx_train_nc[ano_label[idx_train_nc]==0]
-                loss_comm = xent(prob_nc[idx_train_id], labels[idx_train_id])  # In-distribution
+                # idx_train_id = idx_train_nc[ano_label[idx_train_nc]==0]
+                loss_comm = xent(prob_nc[idx_train_nc], labels[idx_train_nc])  # no anomaly labels, overall accuracy
 
             loss_comm.backward()
             opt.step()
@@ -90,9 +90,9 @@ def main(args):
                     acc_val = auc(prob_nc[idx_val], labels[idx_val])
                     print('AUC:', "{:.5f}".format(acc_val))
                 else:
-                    idx_val_id = idx_val[ano_label[idx_val]==0]
-                    acc_val = accuracy(prob_nc[idx_val_id], labels[idx_val_id])
-                    print('ID-ACC:', "{:.5f}".format(acc_val))
+                    # idx_val_id = idx_val[ano_label[idx_val]==0]
+                    acc_val = accuracy(prob_nc[idx_val], labels[idx_val])
+                    print('ACC:', "{:.5f}".format(acc_val))
 
                 if acc_val > best_val:
                     best_val = acc_val
