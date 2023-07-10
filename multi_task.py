@@ -6,6 +6,7 @@ import random
 import os
 import dgl
 import argparse
+import copy
 
 from utils import *
 from models import *
@@ -65,9 +66,10 @@ def main(args):
     state_an[idx_train_ad] = 1
 
     # Train model
+    best_model = None
+    best_opt = None
+    best_val = 0
     for iter in range(args.iter_num + 1):
-        best_model = None
-        best_val = 0
         for epoch in range(args.max_epoch):
             model.train()
             opt.zero_grad()
@@ -96,12 +98,15 @@ def main(args):
 
                 if ad_auc_val * nc_idacc_val > best_val:
                     best_val = ad_auc_val * nc_idacc_val
-                    best_model = model
-                else: 
-                    model = best_model
+                    best_model = copy.deepcopy(model.state_dict())
+                    best_opt = copy.deepcopy(opt.state_dict())
 
-                model.eval()
-                embed, prob_nc, prob_ad  = model(features, adj)
+        with torch.no_grad():
+            model.load_state_dict(best_model)
+            opt.load_state_dict(best_opt)
+
+            model.eval()
+            embed, prob_nc, prob_ad  = model(features, adj)
 
         # Node Selection
         if len(idx_train_nc) < args.max_budget * nb_classes:
@@ -114,6 +119,14 @@ def main(args):
                 idx_selected_nc = query_largest_degree(nx.from_numpy_array(np.array(adj.cpu())), budget_nc, idx_cand_nc.tolist())
             elif args.strategy_nc == 'uncertainty':
                 idx_selected_nc = query_uncertainty(prob_nc, budget_nc, idx_cand_nc.tolist())
+            elif args.strategy_nc == 't2':
+                idx_selected_nc = query_t2(adj, prob_nc, prob_ad, budget_nc, idx_cand_nc.tolist())
+            elif args.strategy_nc == 't3':
+                idx_selected_nc = query_t3(adj, prob_nc, prob_ad, budget_nc, idx_cand_nc.tolist())
+            elif args.strategy_nc == 't4':
+                idx_selected_nc = query_t4(adj, prob_nc, prob_ad, budget_nc, idx_cand_nc.tolist())
+            elif args.strategy_nc == 't1':
+                idx_selected_nc = query_t1(embed, prob_nc, prob_ad, budget_nc, idx_cand_nc.tolist(), labels, idx_train_nc)
             else:
                 raise ValueError("NC Strategy is not defined")
             

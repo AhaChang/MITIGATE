@@ -6,6 +6,7 @@ import random
 import dgl
 import argparse
 import os
+import copy
 
 from utils import *
 from models import *
@@ -63,9 +64,11 @@ def main(args):
     state_nc[idx_train_nc] = 1
 
     # Train model
+    best_model = None
+    best_opt = None
+    best_val = 0
     for iter in range(args.iter_num + 1):
-        best_model = None
-        best_val = 0
+        
 
         for epoch in range(args.max_epoch):
             model.train()
@@ -96,12 +99,15 @@ def main(args):
 
                 if acc_val > best_val:
                     best_val = acc_val
-                    best_model = model
-                else: 
-                    model = best_model
+                    best_model = copy.deepcopy(model.state_dict())
+                    best_opt = copy.deepcopy(opt.state_dict())
 
-                model.eval()
-                embed, prob_nc = model(features, adj)
+        with torch.no_grad():
+            model.load_state_dict(best_model)
+            opt.load_state_dict(best_opt)
+
+            model.eval()
+            embed, prob_nc = model(features, adj)
 
         # Node Selection
         if len(idx_train_nc) < args.max_budget * nb_classes:
