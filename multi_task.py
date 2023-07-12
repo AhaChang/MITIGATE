@@ -90,14 +90,15 @@ def main(args):
                 embed, prob_nc, prob_ad  = model(features, adj)
                 
                 ad_auc_val = auc(prob_ad[idx_val], ano_label[idx_val])
+                ad_f1micro_val, ad_f1macro_val = f1(prob_ad[idx_val], ano_label[idx_val])
                 idx_val_id = idx_val[ano_label[idx_val]==0]
                 nc_acc_val = accuracy(prob_nc[idx_val], labels[idx_val])
                 nc_idacc_val = accuracy(prob_nc[idx_val_id], labels[idx_val_id])
 
                 print('AD-AUC:', "{:.5f}".format(ad_auc_val), ' NC-ACC:', "{:.5f}".format(nc_acc_val), ' NC-IDACC: ', "{:.5f}".format(nc_idacc_val))
 
-                if ad_auc_val * nc_idacc_val > best_val:
-                    best_val = ad_auc_val * nc_idacc_val
+                if min(nc_idacc_val, ad_auc_val) > best_val:
+                    best_val = min(nc_idacc_val, ad_auc_val)
                     best_model = copy.deepcopy(model.state_dict())
                     best_opt = copy.deepcopy(opt.state_dict())
 
@@ -119,14 +120,12 @@ def main(args):
                 idx_selected_nc = query_largest_degree(nx.from_numpy_array(np.array(adj.cpu())), budget_nc, idx_cand_nc.tolist())
             elif args.strategy_nc == 'uncertainty':
                 idx_selected_nc = query_uncertainty(prob_nc, budget_nc, idx_cand_nc.tolist())
-            elif args.strategy_nc == 't2':
-                idx_selected_nc = query_t2(adj, prob_nc, prob_ad, budget_nc, idx_cand_nc.tolist())
             elif args.strategy_nc == 't3':
                 idx_selected_nc = query_t3(adj, prob_nc, prob_ad, budget_nc, idx_cand_nc.tolist())
-            elif args.strategy_nc == 't4':
-                idx_selected_nc = query_t4(adj, prob_nc, prob_ad, budget_nc, idx_cand_nc.tolist())
             elif args.strategy_nc == 't1':
                 idx_selected_nc = query_t1(embed, prob_nc, prob_ad, budget_nc, idx_cand_nc.tolist(), labels, idx_train_nc)
+            elif args.strategy_nc == 't5':
+                idx_selected_nc = query_t5(embed, prob_nc, prob_ad, budget_nc, idx_cand_nc.tolist(), labels, idx_train_nc)
             else:
                 raise ValueError("NC Strategy is not defined")
             

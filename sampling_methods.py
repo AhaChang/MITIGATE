@@ -147,3 +147,89 @@ def compute_new_medoid(cluster, distances):
     # print(f'new_costs: {costs}')
     # print(f'new_medoid: {cluster[min_idx]}')
     return cluster[min_idx]
+
+
+
+def query_t3(adj, prob_nc, prob_ad, number, nodes_idx):
+    '''
+    The sum of entropy in the neighborhood
+    '''
+    comm_score = F.softmax(prob_nc,dim=1)
+    ano_score = F.softmax(prob_ad, dim=1)[:,1]
+
+    log_comm_score = torch.log_softmax(comm_score, dim=1).detach()
+    stru_comm_entropy = -torch.sum(comm_score*log_comm_score, dim=1)
+    nb_comm_entropy = torch.mm(adj, stru_comm_entropy.view(-1,1))
+
+    final_score = nb_comm_entropy.view(-1) * (1 - ano_score)
+
+    indices = torch.topk(final_score[nodes_idx], number, largest=True)[1]
+    indices = list(indices.cpu().numpy())
+
+    return np.array(nodes_idx)[indices]
+
+
+def query_t1(embed, prob_nc, prob_ad, number, nodes_idx, labels, idx_train_nc):
+    '''
+    Embedding center -- the mean of embeddings of labeled nodes
+    Pseudo anomaly labels -- to remove predicted ood nodes
+    Target: Identify the predicted in-distribution nodes that are farthest from the embedding center
+    '''
+    unique_labels = torch.unique(labels[idx_train_nc])
+    anomaly_label  = F.softmax(prob_ad, dim=1).argmax(1)
+
+    k = number // unique_labels.shape[0]
+    grouped_indices = {label.item(): idx_train_nc[labels[idx_train_nc] == label] for label in unique_labels}
+    centers = {label: embed[indices].mean(dim=0) for label, indices in grouped_indices.items()}
+
+    argmax_result = prob_nc.argmax(dim=1)[nodes_idx]
+    embeds_id0 = {label.item(): torch.LongTensor(nodes_idx)[argmax_result == label] for label in unique_labels} # devide the community with pseudo labels 
+    embeds_id = {label.item(): torch.LongTensor(nodes_idx)[(anomaly_label[nodes_idx]==0) & (argmax_result==label)] for label in unique_labels} # remove predicted anomalies
+
+    selected = torch.LongTensor()
+    for label in unique_labels:
+        if embeds_id[label.item()].shape[0]<k:
+            if embeds_id[label.item()].shape[0]>0:
+                distances = torch.sum((embed[embeds_id[label.item()]] - centers[label.item()])**2, dim=1)
+                indices = torch.topk(distances, embeds_id[label.item()].shape[0], largest=True)[1]
+                indices = embeds_id[label.item()][indices]
+                selected = torch.cat((selected,indices))
+            distances = torch.sum((embed[embeds_id0[label.item()]] - centers[label.item()])**2, dim=1)
+            indices = torch.topk(distances, k-embeds_id[label.item()].shape[0], largest=True)[1]
+            indices = embeds_id0[label.item()][indices]
+            selected = torch.cat((selected,indices))
+        else:  
+            distances = torch.sum((embed[embeds_id[label.item()]] - centers[label.item()])**2, dim=1)
+            indices = torch.topk(distances, k, largest=True)[1]
+            indices = embeds_id[label.item()][indices]
+            selected = torch.cat((selected,indices))
+
+    return selected
+
+
+def query_t5(embed, prob_nc, prob_ad, number, nodes_idx, labels, idx_train_nc):
+    '''
+    Embedding center -- the mean of embeddings of labeled nodes
+    Anomaly scores
+    Target: Identify the predicted in-distribution nodes that are farthest from the embedding center
+    '''
+    unique_labels = torch.unique(labels[idx_train_nc])
+    anomaly_scores  = F.softmax(prob_ad, dim=1)[:,1]
+
+    k = number // unique_labels.shape[0]
+    grouped_indices = {label.item(): idx_train_nc[labels[idx_train_nc] == label] for label in unique_labels}
+    centers = {label: embed[indices].mean(dim=0) for label, indices in grouped_indices.items()}
+
+    argmax_result = prob_nc.argmax(dim=1)[nodes_idx]
+    embeds_id = {label.item(): torch.LongTensor(nodes_idx)[argmax_result == label] for label in unique_labels}
+
+    selected = torch.LongTensor()
+    for label in unique_labels:
+        distances = torch.sum((embed[embeds_id[label.item()]] - centers[label.item()])**2, dim=1)
+        distances_ano = distances * (1 - anomaly_scores[embeds_id[label.item()]])
+        indices = torch.topk(distances_ano, k, largest=True)[1]
+        indices = embeds_id[label.item()][indices]
+        selected = torch.cat((selected,indices))
+
+    return selected
+
