@@ -118,14 +118,22 @@ def main(args):
                 idx_selected_nc = query_random(budget_nc, idx_cand_nc.tolist())
             elif args.strategy_nc == 'largest_degree':
                 idx_selected_nc = query_largest_degree(nx.from_numpy_array(np.array(adj.cpu())), budget_nc, idx_cand_nc.tolist())
-            elif args.strategy_nc == 'uncertainty':
-                idx_selected_nc = query_uncertainty(prob_nc, budget_nc, idx_cand_nc.tolist())
+            elif args.strategy_nc == 'entropy':
+                idx_selected_nc = query_entropy(prob_nc, budget_nc, idx_cand_nc.tolist())
+            elif args.strategy_nc == 'density':
+                idx_selected_nc = query_density(embed, budget_nc, idx_cand_nc.tolist(), labels)
+            elif args.strategy_nc == 'entropy_density':
+                idx_selected_nc = query_entropy_density(embed, prob_nc, budget_nc, idx_cand_nc.tolist(), labels)
+            elif args.strategy_nc == 'featprop':
+                idx_selected_nc = query_featprop(embed, budget_nc, idx_cand_nc.tolist())
             elif args.strategy_nc == 't3':
                 idx_selected_nc = query_t3(adj, prob_nc, prob_ad, budget_nc, idx_cand_nc.tolist())
             elif args.strategy_nc == 't1':
                 idx_selected_nc = query_t1(embed, prob_nc, prob_ad, budget_nc, idx_cand_nc.tolist(), labels, idx_train_nc)
             elif args.strategy_nc == 't5':
                 idx_selected_nc = query_t5(embed, prob_nc, prob_ad, budget_nc, idx_cand_nc.tolist(), labels, idx_train_nc)
+            elif args.strategy_nc == 'return_community':
+                idx_selected_nc = return_community(budget_nc, idx_cand_nc.tolist(), labels)
             else:
                 raise ValueError("NC Strategy is not defined")
             
@@ -135,10 +143,14 @@ def main(args):
 
             if args.strategy_ad == 'random':
                 idx_selected_ad = query_random(budget_ad, idx_cand_an.tolist())
-            elif args.strategy_ad == 'uncertainty':
-                idx_selected_ad = query_uncertainty(prob_ad, budget_ad, idx_cand_an.tolist())
+            elif args.strategy_ad == 'entropy':
+                idx_selected_ad = query_entropy(prob_ad, budget_ad, idx_cand_an.tolist())
             elif args.strategy_ad == 'topk_anomaly':
                 idx_selected_ad = query_topk_anomaly(prob_ad, budget_ad, idx_cand_an.tolist())
+            elif args.strategy_ad == 'topk_medoids':
+                idx_selected_ad = query_topk_medoids(embed, prob_ad, budget_ad, idx_cand_an.tolist(), nb_classes)
+            elif args.strategy_ad == 'return_anomaly':
+                idx_selected_ad = return_anomaly(budget_ad, idx_cand_an.tolist(), ano_label)
             else:
                 raise ValueError("AD Strategy is not defined")
 

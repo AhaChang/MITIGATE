@@ -68,8 +68,6 @@ def main(args):
     best_opt = None
     best_val = 0
     for iter in range(args.iter_num + 1):
-        
-
         for epoch in range(args.max_epoch):
             model.train()
             opt.zero_grad()
@@ -117,10 +115,16 @@ def main(args):
                 idx_selected_nc = query_random(budget_nc, idx_cand_nc.tolist())
             elif args.strategy_nc == 'largest_degree':
                 idx_selected_nc = query_largest_degree(nx.from_numpy_array(np.array(adj.cpu())), budget_nc, idx_cand_nc.tolist())
-            elif args.strategy_nc == 'uncertainty':
-                idx_selected_nc = query_uncertainty(prob_nc, budget_nc, idx_cand_nc.tolist())
+            elif args.strategy_nc == 'featprop':
+                idx_selected_nc = query_featprop(embed, budget_nc, idx_cand_nc.tolist())
+            elif args.strategy_nc == 'entropy':
+                idx_selected_nc = query_entropy(prob_nc, budget_nc, idx_cand_nc.tolist())
             elif args.strategy_nc == 'topk_anomaly':
                 idx_selected_nc = query_topk_anomaly(prob_nc, budget_nc, idx_cand_nc.tolist())
+            elif args.strategy_nc == 'density':
+                idx_selected_nc = query_density(embed, budget_nc, idx_cand_nc.tolist(), labels)
+            elif args.strategy_nc == 'entropy_density':
+                idx_selected_nc = query_entropy_density(embed, prob_nc, budget_nc, idx_cand_nc.tolist(), labels)
             else:
                 raise ValueError("Strategy is not defined")
             
@@ -131,6 +135,9 @@ def main(args):
 
     # Test model
     with torch.no_grad():
+        model.load_state_dict(best_model)
+        opt.load_state_dict(best_opt)
+
         model.eval()
         embed, prob_nc = model(features, adj)
 
@@ -198,13 +205,13 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=0.01)
     parser.add_argument('--weight_decay', type=float, default=0.0005)
     parser.add_argument('--dropout', type=float, default=0.6)
-    parser.add_argument('--seed', type=int, default=123)
+    parser.add_argument('--seed', type=int, default=255)
     parser.add_argument('--embedding_dim', type=int, default=128)
     parser.add_argument('--init_num', type=int, default=2)
     parser.add_argument('--max_epoch', type=int, default=300)
     parser.add_argument('--max_budget', type=int, default=20)
     parser.add_argument('--iter_num', type=int, default=9)
-    parser.add_argument('--strategy_nc', type=str, default='largest_degree') # random uncertainty largest_degree topk_anomaly
+    parser.add_argument('--strategy_nc', type=str, default='random') # random uncertainty largest_degree topk_anomaly
     parser.add_argument('--task_type', type=str, default='nc')
     parser.add_argument('--device', type=int, default=1)
     parser.add_argument('--result_path', type=str, default='results/singletask_')

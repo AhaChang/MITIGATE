@@ -5,6 +5,8 @@ import torch
 import torch.nn.functional as F
 from time import perf_counter
 from sklearn.metrics import pairwise_distances
+from sklearn.cluster import KMeans
+from sklearn.metrics.pairwise import euclidean_distances
 
 def init_category(number, nodes_idx, labels):
     label_positions = {}
@@ -23,10 +25,25 @@ def init_category(number, nodes_idx, labels):
 
     return nodes_idx[random_positions_list]
 
+#calculate the percentage of elements larger than the k-th element
+def percd(input,k): return sum([1 if i else 0 for i in input>input[k]])/float(len(input))
+
+def get_entropy_score(output):
+    prob_output = F.softmax(output, dim=1).detach()
+    log_prob_output = F.log_softmax(output, dim=1).detach()
+    entropy = -torch.sum(prob_output*log_prob_output, dim=1)
+    return entropy
+
+def get_density_score(features, nb_cluster):
+    kmeans = KMeans(n_clusters=nb_cluster, random_state=0, n_init='auto').fit(features)
+    ed=euclidean_distances(features,kmeans.cluster_centers_)
+    ed_score = np.min(ed,axis=1)	#the larger ed_score is, the far that node is away from cluster centers, the less representativeness the node is
+    edprec = torch.FloatTensor([percd(ed_score,i) for i in range(len(ed_score))]).cuda()
+    return edprec
+
 
 def query_random(number, nodes_idx):
     return np.random.choice(nodes_idx, size=number, replace=False)
-
 
 def query_largest_degree(nx_graph, number, nodes_idx):
     degree_dict = dict(nx_graph.degree(nodes_idx))
@@ -42,25 +59,38 @@ def query_featprop(features, number, nodes_idx):
     distances = pairwise_distances(X, X)
     print('computer pairwise_distances: {}s'.format(perf_counter() - t1))
     clusters, medoids = k_medoids(distances, k=number)
-    # print('cluster: ', clusters)
-    # print('medoids: ', medoids)
-    # print('new indices: ', np.array(nodes_idx)[medoids])
     return np.array(nodes_idx)[medoids]
 
-def query_uncertainty(prob, number, nodes_idx):
+def query_entropy(prob, number, nodes_idx):
     output = prob[nodes_idx]
-    prob_output = F.softmax(output, dim=1).detach()
-    # log_prob_output = torch.log(prob_output).detach()
-    log_prob_output = F.log_softmax(output, dim=1).detach()
-    # print('prob_output: ', prob_output)
-    # print('log_prob_output: ', log_prob_output)
-    entropy = -torch.sum(prob_output*log_prob_output, dim=1)
-    # print('entropy: ', entropy)
+    entropy = get_entropy_score(output)
     indices = torch.topk(entropy, number, largest=True)[1]
-    # print('indices: ', list(indices.cpu().numpy()))
     indices = list(indices.cpu().numpy())
     return np.array(nodes_idx)[indices]
-    # return indices
+
+def query_density(embeds, number, nodes_idx, labels):
+    unique_labels = torch.unique(labels)
+    edprec = get_density_score(embeds[nodes_idx].cpu(), unique_labels.shape[0])
+    indices = torch.topk(edprec, number, largest=True)[1]
+    indices = list(indices.cpu().numpy())
+    return np.array(nodes_idx)[indices]
+
+def query_entropy_density(embeds, prob, number, nodes_idx, labels):
+    unique_labels = torch.unique(labels)
+    edprec = get_density_score(embeds[nodes_idx].cpu(), unique_labels.shape[0])
+    entropy = get_entropy_score(prob[nodes_idx])
+    finalweight = edprec + entropy
+    indices = torch.topk(finalweight, number, largest=True)[1]
+    indices = list(indices.cpu().numpy())
+    return np.array(nodes_idx)[indices]
+
+def query_featprop(features, number, nodes_idx):
+    features = features.cpu().numpy()
+    X = features[nodes_idx]
+    distances = pairwise_distances(X, X)
+    clusters, medoids = k_medoids(distances, k=number)
+    return np.array(nodes_idx)[medoids]
+
 
 def query_topk_anomaly(prob, number, nodes_idx):
     output = prob[nodes_idx]
@@ -68,6 +98,28 @@ def query_topk_anomaly(prob, number, nodes_idx):
     indices = torch.topk(prob_output[:,-1], number, largest=True)[1]
     indices = list(indices.cpu().numpy())
     return np.array(nodes_idx)[indices]
+
+def query_topk_medoids(embed, prob_ad, number, nodes_idx, nb_classes):
+    embed = embed[nodes_idx].cpu().numpy()
+    distances = pairwise_distances(embed, embed)
+    clusters, medoids = k_medoids(distances, k=2*nb_classes)
+    indices = torch.topk(prob_ad[:,-1][medoids], number, largest=True)[1]
+    indices = list(indices.cpu().numpy())
+    return medoids[indices]
+
+def return_community(number, nodes_idx, labels):
+    unique_labels = torch.unique(labels)
+    res = np.array([])
+    k = number // unique_labels.shape[0]
+    for label in unique_labels:
+        label_node_idx = torch.LongTensor(nodes_idx)[torch.where(labels[nodes_idx]==label)[0]]
+        res = np.hstack((res, np.random.choice(label_node_idx, size=k, replace=False)))
+    return res
+
+def return_anomaly(number, nodes_idx, ano_labels):
+    ano_node_idx = torch.LongTensor(nodes_idx)[torch.where(ano_labels[nodes_idx]==1)[0]]
+    nor_node_idx = torch.LongTensor(nodes_idx)[torch.where(ano_labels[nodes_idx]==0)[0]]
+    return np.hstack((np.random.choice(ano_node_idx, size=number//2, replace=False),np.random.choice(nor_node_idx, size=number//2, replace=False)))
 
 def k_medoids(distances, k=3):
     # From https://github.com/salspaugh/machine_learning/blob/master/clustering/kmedoids.py
