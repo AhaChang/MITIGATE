@@ -45,15 +45,14 @@ class Encoder(nn.Module):
     def __init__(self, nfeat, nhid, dropout):
         super(Encoder, self).__init__()
 
-        self.gc1 = GraphConvolution(nfeat, nhid, bias=True)
-        self.gc2 = GraphConvolution(nhid, nhid, bias=True)
+        self.gc1 = GraphConvolution(nfeat, nhid)
+        self.gc2 = GraphConvolution(nhid, nhid)
         self.dropout = dropout
 
     def forward(self, x, adj):
-        x = F.dropout(x, self.dropout, training=self.training)
         x = F.relu(self.gc1(x, adj))
         x = F.dropout(x, self.dropout, training=self.training)
-        x = self.gc2(x, adj)
+        x = F.relu(self.gc2(x, adj))
         return x
 
 
@@ -61,12 +60,11 @@ class Discriminator(nn.Module):
     def __init__(self, nin, nout, dropout):
         super(Discriminator, self).__init__()
 
-        self.lr1 = nn.Linear(nin, nin//2)
-        self.lr2 = nn.Linear(nin//2, nout)
+        self.lr1 = nn.Linear(nin, nin//4)
+        self.lr2 = nn.Linear(nin//4, nout)
         self.dropout = dropout
 
     def forward(self, x):
-        x = F.relu(x)
         x = F.dropout(x, self.dropout, training=self.training)
         x = F.relu(self.lr1(x))
         x = F.dropout(x, self.dropout, training=self.training)
@@ -84,10 +82,8 @@ class MultiTask(nn.Module):
 
     def forward(self, x, adj):
         x = self.encoder(x, adj)
-
         pred_nc = self.dis_neighbor(x)
         pred_ad = self.dis_anomlay(x)
-
         return x, pred_nc, pred_ad
     
 
@@ -101,5 +97,4 @@ class SingleTask(nn.Module):
     def forward(self, x, adj):
         x = self.encoder(x, adj)
         pred = self.discriminator(x)
-
         return x, pred
