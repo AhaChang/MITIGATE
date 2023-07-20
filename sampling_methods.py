@@ -235,7 +235,7 @@ def query_t1(embed, prob_nc, prob_ad, number, nodes_idx, labels, idx_train_nc):
     centers = {label: embed[indices].mean(dim=0) for label, indices in grouped_indices.items()}
 
     argmax_result = prob_nc.argmax(dim=1)[nodes_idx]
-    embeds_id0 = {label.item(): torch.LongTensor(nodes_idx)[argmax_result == label] for label in unique_labels} # devide the community with pseudo labels 
+    embeds_id0 = {label.item(): torch.LongTensor(nodes_idx)[labels[nodes_idx] == label] for label in unique_labels} # devide the community with actual labels 
     embeds_id = {label.item(): torch.LongTensor(nodes_idx)[(anomaly_label[nodes_idx]==0) & (argmax_result==label)] for label in unique_labels} # remove predicted anomalies
 
     selected = torch.LongTensor()
@@ -246,6 +246,7 @@ def query_t1(embed, prob_nc, prob_ad, number, nodes_idx, labels, idx_train_nc):
                 indices = torch.topk(distances, embeds_id[label.item()].shape[0], largest=True)[1]
                 indices = embeds_id[label.item()][indices]
                 selected = torch.cat((selected,indices))
+
             distances = torch.sum((embed[embeds_id0[label.item()]] - centers[label.item()])**2, dim=1)
             indices = torch.topk(distances, k-embeds_id[label.item()].shape[0], largest=True)[1]
             indices = embeds_id0[label.item()][indices]
@@ -279,9 +280,30 @@ def query_t5(embed, prob_nc, prob_ad, number, nodes_idx, labels, idx_train_nc):
     for label in unique_labels:
         distances = torch.sum((embed[embeds_id[label.item()]] - centers[label.item()])**2, dim=1)
         distances_ano = distances * (1 - anomaly_scores[embeds_id[label.item()]])
-        indices = torch.topk(distances_ano, k, largest=True)[1]
+        if distances_ano.shape[0]>k:
+            indices = torch.topk(distances_ano, k, largest=True)[1]
+        else:
+            indices = torch.topk(distances_ano, distances_ano.shape[0], largest=True)[1]
+
         indices = embeds_id[label.item()][indices]
         selected = torch.cat((selected,indices))
 
     return selected
 
+def query_t7(adj, prob_nc, prob_ad, number, nodes_idx):
+    '''
+    The sum of entropy in the neighborhood
+    '''
+    ano_entropy = get_entropy_score(prob_ad)
+    comm_entropy = get_entropy_score(prob_nc)
+
+    total_entropy = ano_entropy * comm_entropy
+
+    nb_comm_entropy = torch.mm(adj, total_entropy.view(-1,1))
+
+    final_score = nb_comm_entropy.view(-1) 
+
+    indices = torch.topk(final_score[nodes_idx], number, largest=True)[1]
+    indices = list(indices.cpu().numpy())
+
+    return np.array(nodes_idx)[indices]
