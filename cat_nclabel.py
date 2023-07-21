@@ -148,18 +148,6 @@ def main(args):
             model.eval()
             embed, prob_ad = model(features, adj)
 
-            test_auc_ano = auc(prob_ad[idx_test], ano_labels[idx_test])
-            test_f1micro_ano, test_f1macro_ano = f1(prob_ad[idx_test], ano_labels[idx_test])
-
-            abnormal_num = int(ano_labels[idx_train_ad].sum().item())
-            normal_num = len(idx_train_ad) - abnormal_num
-
-            print('Anomaly Detection Results')
-            print('F1-Macro', "{:.5f}".format(test_f1macro_ano), 
-                  'AUC', "{:.5f}".format(test_auc_ano),
-                  'N_num', normal_num,
-                  'A_num', abnormal_num)
-            
         # Node Selection
         if len(idx_train_ad) < args.max_budget * 2:
             idx_cand_ad = torch.where(state_ad==-1)[0]
@@ -187,7 +175,22 @@ def main(args):
             state_ad[idx_selected_ad] = 1
             idx_train_ad = torch.cat((idx_train_ad, torch.LongTensor(idx_selected_ad).cuda()))
 
+    # Test model
+    with torch.no_grad():
+        model.eval()
+        embed, prob_ad = model(features, adj)
 
+        test_auc_ano = auc(prob_ad[idx_test], ano_labels[idx_test])
+        test_f1micro_ano, test_f1macro_ano = f1(prob_ad[idx_test], ano_labels[idx_test])
+
+        abnormal_num = int(ano_labels[idx_train_ad].sum().item())
+        normal_num = len(idx_train_ad) - abnormal_num
+
+        print('Anomaly Detection Results')
+        print('F1-Macro', "{:.5f}".format(test_f1macro_ano), 
+                'AUC', "{:.5f}".format(test_auc_ano),
+                'N_num', normal_num,
+                'A_num', abnormal_num)
 
 
     # Save results
