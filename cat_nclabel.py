@@ -70,8 +70,9 @@ def main(args):
     # Init selection
     idx_train_ad = init_category(args.init_num, idx_train, ano_labels)
 
-    # Budget in each iteration
-    budget_ad = int(2 * (args.max_budget - args.init_num) / args.iter_num)
+    #
+    budget_factor = 2 * (args.max_budget - args.init_num) / (args.iter_num*(args.iter_num + 1) / 2)
+    max_budget_ad = 2 * (args.max_budget - args.init_num) 
 
     # Init annotation state
     state_ad = torch.zeros(features.shape[0]) - 1
@@ -82,42 +83,42 @@ def main(args):
     # Train model
     patience = 20
     early_stopping = 20
-    cost_val = []
     best_val = 0
+    total_spent_budget = 0
     for iter in range(args.iter_num + 1):
         cur_p = 0
-        patience = 20
-        cost_val = []
         best_loss = 1e9
+
+        # Budget in each iteration
+        if args.ad_budget_type == 'equal':
+            budget_ad = int(2 * (args.max_budget - args.init_num) / args.iter_num)
+        elif args.ad_budget_type == 'decrease':
+            budget_ad += iter * budget_factor
+            if iter != args.iter_num:
+                budget_ad = round(iter * budget_factor)
+                total_spent_budget += budget_ad
+            else:
+                budget_ad = max_budget_ad - total_spent_budget
+
         for epoch in range(args.max_epoch):
             model.train()
             opt.zero_grad()
 
             embed, prob_ad = model(features, adj)
 
-            loss_comm = xent(prob_ad[idx_train_ad], ano_labels[idx_train_ad]) 
-            loss_comm.backward()
+            loss = xent(prob_ad[idx_train_ad], ano_labels[idx_train_ad]) 
+            loss.backward()
             opt.step()
 
             with torch.no_grad():
                 model.eval()
                 embed, prob_ad = model(features, adj)
                 
-                auc_val = auc(prob_ad[idx_val], ano_labels[idx_val])
-                acc_val = accuracy(prob_ad[idx_val], ano_labels[idx_val])
-                val_f1micro, val_f1macro = f1(prob_ad[idx_val], ano_labels[idx_val])
-                print('Loss',"{:.5f}".format(loss_comm.item()),' AUC:', "{:.5f}".format(auc_val))
                 val_loss = xent(prob_ad[idx_val], ano_labels[idx_val]).item()
-                cost_val.append(val_loss)
 
-                # if auc_val > best_val:
-                #     best_val = auc_val
-                #     best_model = copy.deepcopy(model.state_dict())
-                #     best_opt = copy.deepcopy(opt.state_dict())
-
-                # if epoch > early_stopping and cost_val[-1] > np.mean(cost_val[-(early_stopping+1):-1]):
-                #     print('Early Stopping')
-                #     break
+                auc_val = auc(prob_ad[idx_val], ano_labels[idx_val])
+                val_f1micro, val_f1macro = f1(prob_ad[idx_val], ano_labels[idx_val])
+                print('Train Loss',"{:.5f}".format(loss.item()),' AUC:', "{:.5f}".format(auc_val),' F1-Macro:', "{:.5f}".format(val_f1macro))
 
                 # Save model untill loss does not decrease
                 if epoch > early_stopping:
@@ -134,21 +135,8 @@ def main(args):
                         cur_p += 1
 
 
-                # Save model with best accuracy/auc
-                # if acc_val > best_val:
-                #     best_val = acc_val
-                #     cur_p = 0
-                #     torch.save({
-                #         'epoch': epoch,
-                #         'model_state_dict': model.state_dict(),
-                #         'optimizer_state_dict': opt.state_dict(),
-                #     }, filename+'_checkpoint.pt')
-                # else:
-                #     cur_p += 1
-
-
                 if cur_p > patience or epoch+1 >= args.max_epoch:
-                    print('epoch: {}, acc_val: {}, best_acc_val: {}'.format(epoch, auc_val, best_val))
+                    print('epoch: {}, auc_val: {}, best_auc_val: {}'.format(epoch, auc_val, best_val))
                     # load best model
                     checkpoint = torch.load(filename+'_checkpoint.pt')
                     model.load_state_dict(checkpoint['model_state_dict'])
@@ -156,26 +144,20 @@ def main(args):
                     break
 
         with torch.no_grad():
-            # model.load_state_dict(best_model)
-            # opt.load_state_dict(best_opt)
-
             model.eval()
             embed, prob_ad = model(features, adj)
 
             test_auc_ano = auc(prob_ad[idx_test], ano_labels[idx_test])
-            test_acc_ano = accuracy(prob_ad[idx_test], ano_labels[idx_test])
             test_f1micro_ano, test_f1macro_ano = f1(prob_ad[idx_test], ano_labels[idx_test])
 
             abnormal_num = int(ano_labels[idx_train_ad].sum().item())
             normal_num = len(idx_train_ad) - abnormal_num
 
             print('Anomaly Detection Results')
-            print('ACC', "{:.5f}".format(test_acc_ano), 
-                'F1-Micro', "{:.5f}".format(test_f1micro_ano), 
-                'F1-Macro', "{:.5f}".format(test_f1macro_ano), 
-                'AUC', "{:.5f}".format(test_auc_ano),
-                'N_num', normal_num,
-                'A_num', abnormal_num)
+            print('F1-Macro', "{:.5f}".format(test_f1macro_ano), 
+                  'AUC', "{:.5f}".format(test_auc_ano),
+                  'N_num', normal_num,
+                  'A_num', abnormal_num)
             
         # Node Selection
         if len(idx_train_ad) < args.max_budget * 2:
@@ -206,10 +188,10 @@ def main(args):
 
 
 
-            
+
     # Save results
     import csv
-    des_path = args.result_path +  '.csv'
+    des_path = args.result_path + '.csv'
 
     if not os.path.exists(des_path):
         with open(des_path,'w+') as f:
@@ -240,6 +222,7 @@ if __name__ == '__main__':
     parser.add_argument('--device', type=int, default=1)
     parser.add_argument('--info_type', type=str, default='onehot_labels') # non labels onehot_labels
     parser.add_argument('--result_path', type=str, default='results/label_info')
+    parser.add_argument('--ad_budget_type', type=str, default='equal') # decrease/equal
 
     args = parser.parse_args()
 
