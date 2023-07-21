@@ -84,6 +84,7 @@ def main(args):
     patience = 20
     early_stopping = 20
     best_val = 0
+    budget_ad = 0
     total_spent_budget = 0
     for iter in range(args.iter_num + 1):
         cur_p = 0
