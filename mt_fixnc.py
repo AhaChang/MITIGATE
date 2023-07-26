@@ -40,14 +40,15 @@ def train_nc_model(args, model_nc, opt_nc, features, adj, labels, ano_labels, id
         
         loss_sup = xent(prob_nc[idx_train_nc], labels[idx_train_nc]) 
 
+
         # loss_un = xent(prob_nc[torch.where(ano_labels[idx_train_ad]==1)[0]], prob_nc.argmax(dim=1)[torch.where(ano_labels[idx_train_ad]==1)[0]])
-        loss_un = entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_train_ad]==0)[0]])/entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_train_ad]==1)[0]])
+        # loss_un = entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_train_ad]==0)[0]])/entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_train_ad]==1)[0]])
         # loss_un = torch.mean(1-F.softmax(prob_nc,dim=1).max(dim=1)[0][torch.where(ano_labels[idx_train_ad]==0)[0]])
         # loss_un = torch.exp(-entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_train_ad]==1)[0]]))
         # loss_un = entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_train_ad]==0)[0]]) + entropy_loss(F.softmax(prob_nc,dim=1)[idx_train_nc])
-        loss = loss_sup + args.w1 * loss_un
+        # loss = loss_sup + args.w1 * loss_un
 
-        loss.backward()
+        loss_sup.backward()
         opt_nc.step()
 
         with torch.no_grad():
@@ -58,7 +59,7 @@ def train_nc_model(args, model_nc, opt_nc, features, adj, labels, ano_labels, id
             
             nc_acc_val = accuracy(prob_nc[idx_val], labels[idx_val])
 
-            print('Train Loss', "{:.5f}".format(loss.item()),
+            print('Train Loss', "{:.5f}".format(loss_sup.item()),
                     'NC-ACC:', "{:.5f}".format(nc_acc_val))
 
             # Save model untill loss does not decrease
@@ -112,9 +113,14 @@ def train_ad_model(args, model_ad, opt_ad, prob_nc, features, adj, ano_labels, i
             model_ad.eval()
             embed, prob_ad = model_ad(torch.cat((features, prob_nc), dim=1), adj)
             
+            # val_loss = xent(prob_ad[idx_val], ano_labels[idx_val])
+            
             ad_auc_val = auc(prob_ad[idx_val], ano_labels[idx_val])
             ad_f1micro_val, ad_f1macro_val = f1(prob_ad[idx_val], ano_labels[idx_val])
 
+
+            # print('Train Loss', "{:.5f}".format(val_loss.item()),
+            #         'AD-AUC:', "{:.5f}".format(ad_auc_val))
             print('AD-AUC:', "{:.5f}".format(ad_auc_val),
                   'AD-F1-Macro:', "{:.5f}".format(ad_f1macro_val))
 
@@ -240,16 +246,12 @@ def main(args):
     state_an[idx_train] = 2
 
     # # Train node classification model
-    # model_nc, opt_nc = train_nc_model(args, model_nc, opt_nc, features, adj, labels, ano_labels, idx_train_nc, idx_train_ad, idx_val, idx_test, filename)
-    # embed_nc, prob_nc, test_acc_nc, test_acc_nc_id, test_f1macro_nc, test_f1micro_nc = test_nc_model(model_nc, features, adj, labels, ano_labels, idx_test)
+    model_nc, opt_nc = train_nc_model(args, model_nc, opt_nc, features, adj, labels, ano_labels, idx_train_nc, idx_train_ad, idx_val, idx_test, filename)
+    embed_nc, prob_nc, test_acc_nc, test_acc_nc_id, test_f1macro_nc, test_f1micro_nc = test_nc_model(model_nc, features, adj, labels, ano_labels, idx_test)
 
     # Train model    
     budget_ad = int(2 * (args.max_budget - args.init_num) / args.iter_num)
     for iter in range(args.iter_num + 1):
-
-        # Train node classification model
-        model_nc, opt_nc = train_nc_model(args, model_nc, opt_nc, features, adj, labels, ano_labels, idx_train_nc, idx_train_ad, idx_val, idx_test, filename)
-        embed_nc, prob_nc, test_acc_nc, test_acc_nc_id, test_f1macro_nc, test_f1micro_nc = test_nc_model(model_nc, features, adj, labels, ano_labels, idx_test)
 
         # Train anomaly detection model
         model_ad, opt_ad = train_ad_model(args, model_ad, opt_ad, prob_nc, features, adj, ano_labels, idx_train_ad, idx_val, idx_test, filename)
@@ -269,8 +271,7 @@ def main(args):
                 elif args.strategy_ad == 'topk_medoids':
                     idx_selected_ad = query_topk_medoids(embed_nc+embed_ad, prob_ad, budget_ad, idx_cand_an.tolist(), nb_classes)
                 elif args.strategy_ad == 'topk_medoids_1':
-                    idx_selected_ad = query_topk_medoids(embed_ad, prob_ad, budget_ad, idx_cand_an.tolist(), nb_classes)
-                    # idx_selected_ad = query_topk_medoids(torch.cat((F.normalize(embed_nc, dim=1),F.normalize(embed_ad,dim=1)),dim=1), prob_ad, budget_ad, idx_cand_an.tolist(), nb_classes)
+                    idx_selected_ad = query_topk_medoids(torch.cat((F.normalize(embed_nc, dim=1),F.normalize(embed_ad,dim=1)),dim=1), prob_ad, budget_ad, idx_cand_an.tolist(), nb_classes)
                 elif args.strategy_ad == 'nc_entropy':
                     idx_selected_ad = query_nc_entropy(prob_nc, budget_ad, idx_cand_an.tolist())
                 elif args.strategy_ad == 'nc_minmax':
