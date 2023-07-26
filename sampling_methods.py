@@ -25,6 +25,24 @@ def init_category(number, nodes_idx, labels):
 
     return nodes_idx[random_positions_list]
 
+def init_category_nc(number, nodes_idx, labels, ano_labels):
+    label_positions = {}
+
+    for i, label in enumerate(labels[nodes_idx]):
+        if ano_labels[nodes_idx[i]]==0:
+            if label.item() not in label_positions:
+                label_positions[label.item()] = []
+            label_positions[label.item()].append(i)
+
+    random_positions_list = []
+    for key, val in label_positions.items():
+        if len(val) >= number:
+            random_positions_list.extend(random.sample(val, number))
+    
+    random.shuffle(random_positions_list)
+
+    return nodes_idx[random_positions_list]
+
 #calculate the percentage of elements larger than the k-th element
 def percd(input,k): return sum([1 if i else 0 for i in input>input[k]])/float(len(input))
 
@@ -68,6 +86,40 @@ def query_entropy(prob, number, nodes_idx):
     indices = list(indices.cpu().numpy())
     return np.array(nodes_idx)[indices]
 
+def query_nc_minmax(prob, number, nodes_idx):
+    max_scores = F.softmax(prob, dim=1)[nodes_idx].max(1)[0]
+    indices = torch.topk(max_scores, number, largest=False)[1] # 最小的最大概率
+    indices = list(indices.cpu().numpy())
+    return np.array(nodes_idx)[indices]
+
+def query_nc_entropy(prob, number, nodes_idx):
+    output = prob[nodes_idx]
+    entropy = get_entropy_score(output)
+    indices = torch.topk(entropy, number, largest=True)[1]
+    indices = list(indices.cpu().numpy())
+    return np.array(nodes_idx)[indices]
+
+
+def query_nc_ano(prob_nc, prob_ad, number, nodes_idx, val_res):
+    # node classification label distribution
+    output_nc = prob_nc[nodes_idx]
+    entropy_nc = get_entropy_score(output_nc)
+    entropy_nc_nor = (entropy_nc - entropy_nc.min())/(entropy_nc.max()-entropy_nc.min())
+    # anomay detection anomaly score
+    output_ad = prob_ad[nodes_idx]
+    score_ad = F.softmax(output_ad, dim=1).detach()[:,-1]
+    score_ad_nor = (score_ad - score_ad.min())/(score_ad.max()-score_ad.min())
+    # 
+    # if val_res<0.5:
+    #     total_score = entropy_nc_nor
+    # else:
+    #     total_score = (1-val_res) * entropy_nc_nor + val_res * score_ad_nor
+    total_score =(1-val_res) * entropy_nc_nor + val_res * score_ad_nor
+    indices = torch.topk(total_score, number, largest=True)[1]
+    indices = list(indices.cpu().numpy())
+    return np.array(nodes_idx)[indices]
+
+
 def query_density(embeds, number, nodes_idx, labels):
     unique_labels = torch.unique(labels)
     edprec = get_density_score(embeds[nodes_idx].cpu(), unique_labels.shape[0])
@@ -102,7 +154,7 @@ def query_topk_anomaly(prob, number, nodes_idx):
 def query_topk_medoids(embed, prob_ad, number, nodes_idx, nb_classes):
     embed = embed[nodes_idx].cpu().numpy()
     distances = pairwise_distances(embed, embed)
-    clusters, medoids = k_medoids(distances, k=2*nb_classes)
+    clusters, medoids = k_medoids(distances, k=nb_classes*2)
     indices = torch.topk(prob_ad[:,-1][medoids], number, largest=True)[1]
     indices = list(indices.cpu().numpy())
     return medoids[indices]
@@ -213,7 +265,7 @@ def query_t3(adj, prob_nc, prob_ad, number, nodes_idx):
     stru_comm_entropy = -torch.sum(comm_score*log_comm_score, dim=1)
     nb_comm_entropy = torch.mm(adj, stru_comm_entropy.view(-1,1))
 
-    final_score = nb_comm_entropy.view(-1) * (1 - ano_score)
+    final_score = nb_comm_entropy.view(-1) * (ano_score)
 
     indices = torch.topk(final_score[nodes_idx], number, largest=True)[1]
     indices = list(indices.cpu().numpy())
