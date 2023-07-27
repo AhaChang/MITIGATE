@@ -175,7 +175,7 @@ if __name__ == "__main__":
         os.makedirs(savedir)
     sio.savemat('dataset/{}.mat'.format(dataset_str),\
                 {'Network': adj, 'Label': label, 'Attributes': attribute,\
-                 'Class':cat_labels, 'str_anomaly_label':str_anomaly_label, 'attr_anomaly_label':attr_anomaly_label, 'graph':graph})
+                 'Class':cat_labels, 'str_anomaly_label':str_anomaly_label, 'attr_anomaly_label':attr_anomaly_label})
     print('Done. The file is save as: dataset/{}.mat \n'.format(dataset_str))
 
 

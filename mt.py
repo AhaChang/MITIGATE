@@ -41,9 +41,15 @@ def train_nc_model(args, model_nc, opt_nc, features, adj, labels, ano_labels, id
         loss_sup = xent(prob_nc[idx_train_nc], labels[idx_train_nc]) 
 
         # loss_un = xent(prob_nc[torch.where(ano_labels[idx_train_ad]==1)[0]], prob_nc.argmax(dim=1)[torch.where(ano_labels[idx_train_ad]==1)[0]])
-        loss_un = entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_train_ad]==0)[0]])/entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_train_ad]==1)[0]])
+        if args.loss == 'div':
+            loss_un = entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_train_ad]==0)[0]])/entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_train_ad]==1)[0]])
+        elif args.loss == 'sum_div':
+            loss_un = entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_train_ad]==0)[0]])+ 1/entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_train_ad]==1)[0]])
+        elif args.loss == 'sum':
+            loss_un = entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_train_ad]==0)[0]]) - entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_train_ad]==1)[0]])
+        else:
+            loss_un = 0
         # loss_un = torch.mean(1-F.softmax(prob_nc,dim=1).max(dim=1)[0][torch.where(ano_labels[idx_train_ad]==0)[0]])
-        # loss_un = torch.exp(-entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_train_ad]==1)[0]]))
         # loss_un = entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_train_ad]==0)[0]]) + entropy_loss(F.softmax(prob_nc,dim=1)[idx_train_nc])
         loss = loss_sup + args.w1 * loss_un
 
@@ -99,7 +105,6 @@ def train_ad_model(args, model_ad, opt_ad, prob_nc, features, adj, ano_labels, i
         model_ad.train()
         opt_ad.zero_grad()
 
-        # F.one_hot(labels, num_classes = nb_classes)
         embed, prob_ad = model_ad(torch.cat((features, prob_nc), dim=1), adj)
         
         # loss_ad = xent(prob_ad[idx_train_ad], ano_labels[idx_train_ad]) 
@@ -184,7 +189,7 @@ def test_ad_model(model_ad, features, adj, ano_labels, prob_nc, idx_train_ad, id
 
 def main(args):
     # Load and preprocess data
-    adj, features, labels, idx_train, idx_val, idx_test, ano_labels, str_ano_labels, attr_ano_labels = load_mat(args.dataset)
+    adj, features, labels, idx_train, idx_val, idx_test, ano_labels, str_ano_labels, attr_ano_labels = load_mat_f(args.dataset)
 
     features, _ = preprocess_features(features)
     nb_nodes = features.shape[0]
@@ -239,10 +244,6 @@ def main(args):
     state_an[idx_val] = 2
     state_an[idx_train] = 2
 
-    # # Train node classification model
-    # model_nc, opt_nc = train_nc_model(args, model_nc, opt_nc, features, adj, labels, ano_labels, idx_train_nc, idx_train_ad, idx_val, idx_test, filename)
-    # embed_nc, prob_nc, test_acc_nc, test_acc_nc_id, test_f1macro_nc, test_f1micro_nc = test_nc_model(model_nc, features, adj, labels, ano_labels, idx_test)
-
     # Train model    
     budget_ad = int(2 * (args.max_budget - args.init_num) / args.iter_num)
     for iter in range(args.iter_num + 1):
@@ -269,8 +270,7 @@ def main(args):
                 elif args.strategy_ad == 'topk_medoids':
                     idx_selected_ad = query_topk_medoids(embed_nc+embed_ad, prob_ad, budget_ad, idx_cand_an.tolist(), nb_classes)
                 elif args.strategy_ad == 'topk_medoids_1':
-                    idx_selected_ad = query_topk_medoids(embed_ad, prob_ad, budget_ad, idx_cand_an.tolist(), nb_classes)
-                    # idx_selected_ad = query_topk_medoids(torch.cat((F.normalize(embed_nc, dim=1),F.normalize(embed_ad,dim=1)),dim=1), prob_ad, budget_ad, idx_cand_an.tolist(), nb_classes)
+                    idx_selected_ad = query_topk_medoids(torch.cat((embed_nc,embed_ad),dim=1), prob_ad, budget_ad, idx_cand_an.tolist(), nb_classes)
                 elif args.strategy_ad == 'nc_entropy':
                     idx_selected_ad = query_nc_entropy(prob_nc, budget_ad, idx_cand_an.tolist())
                 elif args.strategy_ad == 'nc_minmax':
@@ -312,16 +312,16 @@ def main(args):
 if __name__ == '__main__':
     # Set argument
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str, default='cora')  # 'BlogCatalog'  'Flickr'  'ACM'  'cora'  'citeseer'  'pubmed'
+    parser.add_argument('--dataset', type=str, default='BlogCatalog')  # 'BlogCatalog'  'Flickr'  'cora'  'citeseer'  'pubmed'
     parser.add_argument('--lr', type=float, default=0.01)
     parser.add_argument('--weight_decay', type=float, default=0.0005)
-    parser.add_argument('--seed', type=int, default=800)
+    parser.add_argument('--seed', type=int, default=453)
     parser.add_argument('--embedding_dim', type=int, default=128)
     parser.add_argument('--init_num', type=int, default=2)
     parser.add_argument('--max_epoch', type=int, default=300)
     parser.add_argument('--max_budget', type=int, default=20)
     parser.add_argument('--iter_num', type=int, default=9)
-    parser.add_argument('--strategy_ad', type=str, default='topk_medoids_1') # random uncertainty topk_anomaly
+    parser.add_argument('--strategy_ad', type=str, default='topk_medoids') # random uncertainty topk_anomaly
     parser.add_argument('--nc_num', type=int, default=20)
     parser.add_argument('--device', type=int, default=1)
     parser.add_argument('--result_path', type=str, default='results/multitask')

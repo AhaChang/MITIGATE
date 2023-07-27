@@ -93,6 +93,34 @@ def load_mat(dataset, train_rate=0.3, val_rate=0.1):
 
     return adj, feat, labels, idx_train, idx_val, idx_test, ano_labels, str_ano_labels, attr_ano_labels
 
+
+def load_mat_f(dataset):
+    """Load .mat dataset."""
+    data = sio.loadmat("./dataset/{}.mat".format(dataset))
+    label = data['Label'] if ('Label' in data) else data['gnd']
+    attr = data['Attributes'] if ('Attributes' in data) else data['X']
+    network = data['Network'] if ('Network' in data) else data['A']
+
+    adj = sp.csr_matrix(network)
+    feat = sp.lil_matrix(attr)
+
+    labels = np.squeeze(np.array(data['Class'],dtype=np.int64))
+    ano_labels = np.squeeze(np.array(label))
+
+    if 'str_anomaly_label' in data:
+        str_ano_labels = np.squeeze(np.array(data['str_anomaly_label']))
+        attr_ano_labels = np.squeeze(np.array(data['attr_anomaly_label']))
+    else:
+        str_ano_labels = None
+        attr_ano_labels = None
+
+    idx_train = np.loadtxt("splited_data/"+dataset+"/traincand", dtype=int)
+    idx_val = np.loadtxt("splited_data/"+dataset+"/val", dtype=int)
+    idx_test = np.loadtxt("splited_data/"+dataset+"/test", dtype=int)
+
+    return adj, feat, labels, idx_train, idx_val, idx_test, ano_labels, str_ano_labels, attr_ano_labels
+
+
 def adj_to_dgl_graph(adj):
     """Convert adjacency matrix to dgl format."""
     nx_graph = nx.from_scipy_sparse_matrix(adj)
