@@ -173,6 +173,8 @@ def test_ad_model(model_ad, features, adj, ano_labels, prob_nc, idx_train_ad, id
         test_auc_ano = auc(prob_ad[idx_test], ano_labels[idx_test])
         test_acc_ano = accuracy(prob_ad[idx_test], ano_labels[idx_test])
         test_f1micro_ano, test_f1macro_ano = f1(prob_ad[idx_test], ano_labels[idx_test])
+        test_pre = precision(prob_ad[idx_test], ano_labels[idx_test])
+        test_rec = recall(prob_ad[idx_test], ano_labels[idx_test])
 
         abnormal_num = int(ano_labels[idx_train_ad].sum().item())
         normal_num = len(idx_train_ad) - abnormal_num
@@ -185,7 +187,7 @@ def test_ad_model(model_ad, features, adj, ano_labels, prob_nc, idx_train_ad, id
             'N_num', normal_num,
             'A_num', abnormal_num)
         
-    return embed_ad, prob_ad, test_auc_ano, test_f1macro_ano, test_f1micro_ano, abnormal_num, normal_num
+    return embed_ad, prob_ad, test_auc_ano, test_f1macro_ano, test_f1micro_ano, test_pre, test_rec, abnormal_num, normal_num
 
 def main(args):
     # Load and preprocess data
@@ -238,7 +240,7 @@ def main(args):
 
 
     timestamp = time.time()
-    prefix = 'saved_models/new/' + args.dataset + str(args.device) + '/'
+    prefix = 'saved_models/new/' + args.dataset + str(args.device) + args.loss + '/'
     if not os.path.exists(prefix):
         os.makedirs(prefix)
     filename = prefix + str(args.seed)+ '_fixncb_'+ str(timestamp)
@@ -262,7 +264,7 @@ def main(args):
 
         # Train anomaly detection model
         model_ad, opt_ad = train_ad_model(args, model_ad, opt_ad, prob_nc, features, adj, ano_labels, idx_train_ad, idx_val, idx_test, filename)
-        embed_ad, prob_ad, test_auc_ano, test_f1macro_ano, test_f1micro_ano, abnormal_num, normal_num = test_ad_model(model_ad, features, adj, ano_labels, prob_nc, idx_train_ad, idx_test)
+        embed_ad, prob_ad, test_auc_ano, test_f1macro_ano, test_f1micro_ano, test_pre, test_rec, abnormal_num, normal_num = test_ad_model(model_ad, features, adj, ano_labels, prob_nc, idx_train_ad, idx_test)
 
         # Node Selection
         if len(idx_train_ad) < args.max_budget * 2:
@@ -297,7 +299,7 @@ def main(args):
     # Test model
     print('Final Results:')
     embed_nc, prob_nc, test_acc_nc, test_acc_nc_id, test_f1macro_nc, test_f1micro_nc = test_nc_model(model_nc, features, adj, labels, ano_labels, idx_test)
-    embed_ad, prob_ad, test_auc_ano, test_f1macro_ano, test_f1micro_ano, abnormal_num, normal_num = test_ad_model(model_ad, features, adj, ano_labels, prob_nc, idx_train_ad, idx_test)
+    embed_ad, prob_ad, test_auc_ano, test_f1macro_ano, test_f1micro_ano, test_pre, test_rec, abnormal_num, normal_num = test_ad_model(model_ad, features, adj, ano_labels, prob_nc, idx_train_ad, idx_test)
 
     # Save results
     import csv
@@ -306,12 +308,12 @@ def main(args):
     if not os.path.exists(des_path):
         with open(des_path,'w+') as f:
             csv_write = csv.writer(f)
-            csv_head = ["model", "seed", "dataset", "init_num", "num_epochs","loss_type", "strategy_ad", "w1", "nc-acc", "nc-idacc", "nc-f1-micro", "nc-f1-macro", "ad-auc", "ad-f1-macro", "A-num", "N-num"]
+            csv_head = ["model", "seed", "dataset", "init_num", "num_epochs","loss_type", "strategy_ad", "w1", "nc-acc", "nc-idacc", "nc-f1-micro", "nc-f1-macro", "ad-auc", "ad-f1-macro", "ad-pre-macro", "ad-rec-macro", "A-num", "N-num"]
             csv_write.writerow(csv_head)
 
     with open(des_path, 'a+') as f:
         csv_write = csv.writer(f)
-        data_row = ['m1', args.seed, args.dataset, args.init_num, args.max_epoch,args.loss, args.strategy_ad, args.w1, test_acc_nc, test_acc_nc_id, test_f1micro_nc, test_f1macro_nc, test_auc_ano, test_f1macro_ano, abnormal_num, normal_num]
+        data_row = ['m1', args.seed, args.dataset, args.init_num, args.max_epoch, args.loss, args.strategy_ad, args.w1, test_acc_nc, test_acc_nc_id, test_f1micro_nc, test_f1macro_nc, test_auc_ano, test_f1macro_ano, test_pre, test_rec, abnormal_num, normal_num]
         csv_write.writerow(data_row)
 
 

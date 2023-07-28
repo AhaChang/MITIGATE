@@ -78,6 +78,8 @@ def test_ad_model(model_ad, features, adj, ano_labels, idx_train_ad, idx_test):
         test_auc_ano = auc(prob_ad[idx_test], ano_labels[idx_test])
         test_acc_ano = accuracy(prob_ad[idx_test], ano_labels[idx_test])
         test_f1micro_ano, test_f1macro_ano = f1(prob_ad[idx_test], ano_labels[idx_test])
+        test_pre = precision(prob_ad[idx_test], ano_labels[idx_test])
+        test_rec = recall(prob_ad[idx_test], ano_labels[idx_test])
 
         abnormal_num = int(ano_labels[idx_train_ad].sum().item())
         normal_num = len(idx_train_ad) - abnormal_num
@@ -86,15 +88,17 @@ def test_ad_model(model_ad, features, adj, ano_labels, idx_train_ad, idx_test):
         print('ACC', "{:.5f}".format(test_acc_ano), 
             'F1-Micro', "{:.5f}".format(test_f1micro_ano), 
             'F1-Macro', "{:.5f}".format(test_f1macro_ano), 
+            'Precision', "{:.5f}".format(test_pre), 
+            'Recall', "{:.5f}".format(test_rec),
             'AUC', "{:.5f}".format(test_auc_ano),
             'N_num', normal_num,
             'A_num', abnormal_num)
         
-    return embed_ad, prob_ad, test_auc_ano, test_f1macro_ano, test_f1micro_ano, abnormal_num, normal_num
+    return embed_ad, prob_ad, test_auc_ano, test_f1macro_ano, test_f1micro_ano, test_pre, test_rec, abnormal_num, normal_num
 
 def main(args):
     # Load and preprocess data
-    adj, features, labels, idx_train, idx_val, idx_test, ano_labels, str_ano_label, attr_ano_label = load_mat(args.dataset)
+    adj, features, labels, idx_train, idx_val, idx_test, ano_labels, str_ano_label, attr_ano_label = load_mat_f(args.dataset)
 
     features, _ = preprocess_features(features)
     nb_nodes = features.shape[0]
@@ -104,6 +108,10 @@ def main(args):
     adj = normalize_adj(adj)
     adj = (adj + sp.eye(adj.shape[0])).todense()
 
+    # Init Selection
+    # idx_train_ad = init_category(args.init_num, idx_train, ano_labels)
+    idx_train_ad = np.loadtxt("splited_data/"+args.dataset+"/init", dtype=int)
+
     features = torch.FloatTensor(features)
     adj = torch.FloatTensor(adj)
     labels = torch.LongTensor(labels)
@@ -111,6 +119,7 @@ def main(args):
     idx_train = torch.LongTensor(idx_train)
     idx_val = torch.LongTensor(idx_val)
     idx_test = torch.LongTensor(idx_test)
+    idx_train_ad = torch.LongTensor(idx_train_ad)
 
     model_ad = ADModel(ft_size, args.embedding_dim, 2, dropout=0.6)
     opt_ad = torch.optim.Adam(model_ad.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -126,6 +135,7 @@ def main(args):
         idx_train = idx_train.cuda()
         idx_val = idx_val.cuda()
         idx_test = idx_test.cuda()
+        idx_train_ad = idx_train_ad.cuda()
 
     timestamp = time.time()
     prefix = 'saved_models/new/' + args.dataset + str(args.device) + '/'
@@ -133,15 +143,13 @@ def main(args):
         os.makedirs(prefix)
     filename = prefix + str(args.seed)+ '_fixncb_'+ str(timestamp)
 
-    # Init Selection
-    idx_train_ad = init_category(args.init_num, idx_train, ano_labels)
 
     # Init annotation state
     state_an = torch.zeros(features.shape[0]) - 1
     state_an = state_an.long()
     state_an[idx_train_ad] = 1
     state_an[idx_val] = 2
-    state_an[idx_train] = 2
+    state_an[idx_test] = 2
 
     # Train model
     budget_ad = int(2 * (args.max_budget - args.init_num) / args.iter_num)
@@ -149,7 +157,7 @@ def main(args):
     for iter in range(args.iter_num + 1):
         # Train anomaly detection model
         model_ad, opt_ad = train_ad_model(args, model_ad, opt_ad, features, adj, ano_labels, idx_train_ad, idx_val, filename)
-        embed_ad, prob_ad, test_auc_ano, test_f1macro_ano, test_f1micro_ano, abnormal_num, normal_num = test_ad_model(model_ad, features, adj, ano_labels, idx_train_ad, idx_test)
+        embed_ad, prob_ad, test_auc_ano, test_f1macro_ano, test_f1micro_ano, test_pre, test_rec, abnormal_num, normal_num = test_ad_model(model_ad, features, adj, ano_labels, idx_train_ad, idx_test)
                     
 
         # Node Selection
@@ -174,7 +182,7 @@ def main(args):
 
     # Test model
     print('Final Results:')
-    embed_ad, prob_ad, test_auc_ano, test_f1macro_ano, test_f1micro_ano, abnormal_num, normal_num = test_ad_model(model_ad, features, adj, ano_labels, idx_train_ad, idx_test)
+    embed_ad, prob_ad, test_auc_ano, test_f1macro_ano, test_f1micro_ano, test_pre, test_rec, abnormal_num, normal_num = test_ad_model(model_ad, features, adj, ano_labels, idx_train_ad, idx_test)
             
 
     # Save results
@@ -184,12 +192,12 @@ def main(args):
     if not os.path.exists(des_path):
         with open(des_path,'w+') as f:
             csv_write = csv.writer(f)
-            csv_head = ["model", "seed", "dataset", "init_num", "num_epochs", "strategy_ad", "ad-auc", "ad-f1-macro", "A-num", "N-num"]
+            csv_head = ["model", "seed", "dataset", "init_num", "num_epochs", "strategy_ad", "ad-auc", "ad-f1-macro","pre-macro","rec_macro", "A-num", "N-num"]
             csv_write.writerow(csv_head)
 
     with open(des_path, 'a+') as f:
         csv_write = csv.writer(f)
-        data_row = ['plain_ad', args.seed, args.dataset, args.init_num, args.max_epoch, args.strategy_ad, test_auc_ano, test_f1macro_ano, abnormal_num, normal_num]
+        data_row = ['plain_ad', args.seed, args.dataset, args.init_num, args.max_epoch, args.strategy_ad, test_auc_ano, test_f1macro_ano, test_pre, test_rec, abnormal_num, normal_num]
         csv_write.writerow(data_row)
 
 

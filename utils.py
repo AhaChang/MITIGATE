@@ -5,7 +5,7 @@ import torch
 import scipy.io as sio
 import random
 import dgl
-from sklearn.metrics import f1_score, roc_auc_score, accuracy_score
+from sklearn.metrics import f1_score, roc_auc_score, accuracy_score, precision_score, recall_score
 
 
 def sparse_to_tuple(sparse_mx, insert_batch=False):
@@ -177,3 +177,16 @@ def auc(output, labels):
     auc = roc_auc_score(labels, preds)
     return auc
 
+def precision(output, labels):
+    preds = output.max(1)[1]
+    preds = preds.cpu().detach().numpy()
+    labels = labels.cpu().detach().numpy()
+    pre_macro = precision_score(labels, preds, average='macro')
+    return pre_macro
+
+def recall(output, labels):
+    preds = output.max(1)[1]
+    preds = preds.cpu().detach().numpy()
+    labels = labels.cpu().detach().numpy()
+    rec_macro = recall_score(labels, preds, average='macro')
+    return rec_macro

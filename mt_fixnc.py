@@ -192,6 +192,12 @@ def main(args):
     adj = normalize_adj(adj)
     adj = (adj + sp.eye(adj.shape[0])).todense()
 
+    # Init Selection
+    # idx_train_nc = init_category_nc(args.nc_num, idx_train, labels, ano_labels)
+    # idx_train_ad = init_category(args.init_num, idx_train, ano_labels)
+    idx_train_nc = np.loadtxt("splited_data/"+args.dataset+"/nc", dtype=int)
+    idx_train_ad = np.loadtxt("splited_data/"+args.dataset+"/init", dtype=int)
+
     features = torch.FloatTensor(features)
     adj = torch.FloatTensor(adj)
     labels = torch.LongTensor(labels)
@@ -226,16 +232,13 @@ def main(args):
         os.makedirs(prefix)
     filename = prefix + str(args.seed)+ '_fixncb_'+ str(timestamp)
 
-    # Init Selection
-    idx_train_nc = init_category_nc(args.nc_num, idx_train, labels, ano_labels)
-    idx_train_ad = init_category(args.init_num, idx_train, ano_labels)
 
     # Init annotation state
     state_an = torch.zeros(features.shape[0]) - 1
     state_an = state_an.long()
     state_an[idx_train_ad] = 1
     state_an[idx_val] = 2
-    state_an[idx_train] = 2
+    state_an[idx_test] = 2
 
     # # Train node classification model
     model_nc, opt_nc = train_nc_model(args, model_nc, opt_nc, features, adj, labels, ano_labels, idx_train_nc, idx_train_ad, idx_val, idx_test, filename)
