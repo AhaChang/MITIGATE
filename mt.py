@@ -199,6 +199,12 @@ def main(args):
     adj = normalize_adj(adj)
     adj = (adj + sp.eye(adj.shape[0])).todense()
 
+    # Init Selection
+    # idx_train_nc = init_category_nc(args.nc_num, idx_train, labels, ano_labels)
+    # idx_train_ad = init_category(args.init_num, idx_train, ano_labels)
+    idx_train_nc = np.loadtxt("splited_data/"+args.dataset+"/nc", dtype=int)
+    idx_train_ad = np.loadtxt("splited_data/"+args.dataset+"/init", dtype=int)
+
     features = torch.FloatTensor(features)
     adj = torch.FloatTensor(adj)
     labels = torch.LongTensor(labels)
@@ -206,6 +212,8 @@ def main(args):
     idx_train = torch.LongTensor(idx_train)
     idx_val = torch.LongTensor(idx_val)
     idx_test = torch.LongTensor(idx_test)
+    idx_train_nc = torch.LongTensor(idx_train_nc)
+    idx_train_ad = torch.LongTensor(idx_train_ad)
 
     model_nc = NCModel(ft_size, args.embedding_dim, nb_classes, dropout=0.6)
     opt_nc = torch.optim.Adam(model_nc.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -225,6 +233,8 @@ def main(args):
         idx_train = idx_train.cuda()
         idx_val = idx_val.cuda()
         idx_test = idx_test.cuda()
+        idx_train_ad = idx_train_ad.cuda()
+        idx_train_nc = idx_train_nc.cuda()
 
 
     timestamp = time.time()
@@ -233,16 +243,14 @@ def main(args):
         os.makedirs(prefix)
     filename = prefix + str(args.seed)+ '_fixncb_'+ str(timestamp)
 
-    # Init Selection
-    idx_train_nc = init_category_nc(args.nc_num, idx_train, labels, ano_labels)
-    idx_train_ad = init_category(args.init_num, idx_train, ano_labels)
+    
 
     # Init annotation state
     state_an = torch.zeros(features.shape[0]) - 1
     state_an = state_an.long()
     state_an[idx_train_ad] = 1
     state_an[idx_val] = 2
-    state_an[idx_train] = 2
+    state_an[idx_test] = 2
 
     # Train model    
     budget_ad = int(2 * (args.max_budget - args.init_num) / args.iter_num)
@@ -298,12 +306,12 @@ def main(args):
     if not os.path.exists(des_path):
         with open(des_path,'w+') as f:
             csv_write = csv.writer(f)
-            csv_head = ["model", "seed", "dataset", "init_num", "num_epochs", "strategy_ad", "w1", "nc-acc", "nc-idacc", "nc-f1-micro", "nc-f1-macro", "ad-auc", "ad-f1-macro", "A-num", "N-num"]
+            csv_head = ["model", "seed", "dataset", "init_num", "num_epochs","loss_type", "strategy_ad", "w1", "nc-acc", "nc-idacc", "nc-f1-micro", "nc-f1-macro", "ad-auc", "ad-f1-macro", "A-num", "N-num"]
             csv_write.writerow(csv_head)
 
     with open(des_path, 'a+') as f:
         csv_write = csv.writer(f)
-        data_row = ['m1', args.seed, args.dataset, args.init_num, args.max_epoch, args.strategy_ad, args.w1, test_acc_nc, test_acc_nc_id, test_f1micro_nc, test_f1macro_nc, test_auc_ano, test_f1macro_ano, abnormal_num, normal_num]
+        data_row = ['m1', args.seed, args.dataset, args.init_num, args.max_epoch,args.loss, args.strategy_ad, args.w1, test_acc_nc, test_acc_nc_id, test_f1micro_nc, test_f1macro_nc, test_auc_ano, test_f1macro_ano, abnormal_num, normal_num]
         csv_write.writerow(data_row)
 
 
@@ -312,10 +320,10 @@ def main(args):
 if __name__ == '__main__':
     # Set argument
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str, default='BlogCatalog')  # 'BlogCatalog'  'Flickr'  'cora'  'citeseer'  'pubmed'
+    parser.add_argument('--dataset', type=str, default='citeseer')  # 'BlogCatalog'  'Flickr'  'cora'  'citeseer'  'pubmed'
     parser.add_argument('--lr', type=float, default=0.01)
     parser.add_argument('--weight_decay', type=float, default=0.0005)
-    parser.add_argument('--seed', type=int, default=453)
+    parser.add_argument('--seed', type=int, default=528)
     parser.add_argument('--embedding_dim', type=int, default=128)
     parser.add_argument('--init_num', type=int, default=2)
     parser.add_argument('--max_epoch', type=int, default=300)
@@ -327,6 +335,7 @@ if __name__ == '__main__':
     parser.add_argument('--result_path', type=str, default='results/multitask')
 
     parser.add_argument('--w1', type=float, default=0.8)
+    parser.add_argument('--loss', type=str, default='div')
 
     args = parser.parse_args()
 
