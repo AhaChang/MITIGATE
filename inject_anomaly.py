@@ -11,6 +11,19 @@ import os.path as osp
 from sklearn import preprocessing
 from scipy.spatial.distance import euclidean
 
+def load_npz_to_mat(file_name):
+    with np.load(file_name) as loader:
+        loader = dict(loader)
+        adj_matrix = sp.csr_matrix((loader['adj_data'], loader['adj_indices'], loader['adj_indptr']),
+                                   shape=loader['adj_shape'])
+        attr_matrix = sp.csr_matrix((loader['attr_data'], loader['attr_indices'], loader['attr_indptr']),
+                                        shape=loader['attr_shape'])
+        
+        # Labels are stored as a numpy array
+        labels = loader['labels']
+
+        return adj_matrix, attr_matrix, labels
+    
 def dense_to_sparse(dense_matrix):
     shape = dense_matrix.shape
     row = []
@@ -73,7 +86,7 @@ def load_citation_datadet(dataset_str):
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--dataset', type=str, default='cora')  #'BlogCatalog'  'Flickr' 'cora'  'citeseer'  'pubmed' 
+parser.add_argument('--dataset', type=str, default='AmazonComputers')  #'BlogCatalog'  'Flickr' 'cora'  'citeseer'  'pubmed' 
 parser.add_argument('--seed', type=int, default=1)  #random seed
 parser.add_argument('--m', type=int, default=15)  #num of fully connected nodes
 parser.add_argument('--n', type=int)  
@@ -97,7 +110,7 @@ if args.n is None:
         n = 10
     elif dataset_str == 'Flickr':
         n = 15
-    elif dataset_str == 'pubmed':
+    elif dataset_str == 'pubmed'  or dataset_str == 'AmazonComputers'  or dataset_str == 'AmazonPhoto':
         n = 20
 else:
     n = args.n
@@ -119,6 +132,12 @@ if __name__ == "__main__":
         cat_labels = data['Label']
     elif dataset_str in Citation_dataset_list:
         attribute_dense, adj_dense, cat_labels, graph = load_citation_datadet(dataset_str)
+    else:
+        adj_matrix, attr_matrix, labels = load_npz_to_mat('raw_dataset/{}.npz'.format(dataset_str))
+        attribute_dense = np.array(attr_matrix.todense())
+        attribute_dense = preprocessing.normalize(attribute_dense, axis=0)
+        adj_dense = np.array(adj_matrix.todense())
+        cat_labels = labels.reshape(labels.shape[0],-1)
 
     ori_num_edge = np.sum(adj_dense)
     num_node = adj_dense.shape[0]
