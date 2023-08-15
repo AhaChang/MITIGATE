@@ -159,6 +159,16 @@ def query_topk_medoids(embed, prob_ad, number, nodes_idx, nb_classes):
     indices = list(indices.cpu().numpy())
     return medoids[indices]
 
+def query_topk_medoids_m(embed, prob_ad, number, nodes_idx, nb_classes):
+    embed = embed[nodes_idx].cpu().numpy()
+    distances = pairwise_distances(embed, embed)
+    clusters, medoids = k_medoids(distances, k=nb_classes+1)
+    medoids_ano = medoids[prob_ad[:,-1][medoids].argmax()]
+    indices = np.where(clusters==medoids_ano)[0]
+    e = np.random.choice(indices, size=number, replace=False)
+    # e = indices[torch.topk(prob_ad[np.array(nodes_idx)[indices]][:,1], number, largest=True)[1].cpu()]
+    return np.array(nodes_idx)[e]
+
 def return_community(number, nodes_idx, labels):
     unique_labels = torch.unique(labels)
     res = np.array([])
@@ -219,6 +229,7 @@ def k_medoids(distances, k=3):
             break
     print('total num_iter is {}'.format(num_iter))
     print('-----------------------------')
+    clusters = assign_points_to_clusters(curr_medoids, distances)
     return clusters, curr_medoids
 
 def assign_points_to_clusters(medoids, distances):
