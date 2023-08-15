@@ -318,8 +318,8 @@ if __name__ == '__main__':
     parser.add_argument('--strategy_ad', type=str, default='topk_medoids') # random uncertainty topk_anomaly
     parser.add_argument('--device', type=int, default=1)
     parser.add_argument('--result_path', type=str, default='results/multitask')
-    parser.add_argument('--ad_budget_type', type=str, default='increase') # increase equal
-    parser.add_argument('--un_loss_type', type=str, default='sum') # sum div sup_sum sup_div
+    parser.add_argument('--ad_budget_type', type=str, default='equal') # increase equal
+    parser.add_argument('--un_loss_type', type=str, default='div') # sum div sup_sum sup_div
     args = parser.parse_args()
 
     torch.cuda.set_device(args.device)
