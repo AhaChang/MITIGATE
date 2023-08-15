@@ -60,8 +60,8 @@ class Discriminator(nn.Module):
     def __init__(self, nin, nout, dropout):
         super(Discriminator, self).__init__()
 
-        self.lr1 = nn.Linear(nin, nin//4)
-        self.lr2 = nn.Linear(nin//4, nout)
+        self.lr1 = nn.Linear(nin, 16)
+        self.lr2 = nn.Linear(16, nout)
         self.dropout = dropout
 
     def forward(self, x):
@@ -115,27 +115,26 @@ class ADModel(nn.Module):
         pred = self.discriminator(embed)
         return embed, pred
 
-
-class SingleTask(nn.Module):
-    def __init__(self, nfeat, nhid, nout, dropout):
-        super(SingleTask, self).__init__()
+class ADModel_1(nn.Module):
+    def __init__(self, nfeat, nhid, nout, nc_classes, dropout) -> None:
+        super(ADModel_1, self).__init__()
 
         self.encoder = Encoder(nfeat, nhid, dropout)
-        self.discriminator = Discriminator(nhid, nout, dropout)
+        self.discriminator = Discriminator(nhid+nc_classes, nout, dropout)
+        self.dropout = dropout
 
-    def forward(self, x, adj):
-        x = self.encoder(x, adj)
-        pred = self.discriminator(x)
-        return x, pred
-    
+    def forward(self, x, adj, nc_labels):
+        embed = self.encoder(x, adj)
+        pred = self.discriminator(torch.cat((embed,nc_labels),dim=1))
+        return embed, pred
 
-class LinearSelector(nn.Module):
-    def __init__(self, nfeat, nhid) -> None:
-        super(LinearSelector, self).__init__()
-        self.fc1 = nn.Linear(nfeat, nhid)
-        self.fc2 = nn.Linear(nhid, 2)
-    
-    def forward(self, feats):
-        x = self.fc1(feats)
-        x = self.fc2(F.relu(x))
-        return x
+class ADModel_2(nn.Module):
+    def __init__(self, nfeat, nhid, nout, nc_classes, dropout) -> None:
+        super(ADModel_2, self).__init__()
+
+        self.discriminator = Discriminator(nhid+nc_classes, nout, dropout)
+        self.dropout = dropout
+
+    def forward(self, x, adj, nc_labels):
+        pred = self.discriminator(torch.cat((x,nc_labels),dim=1))
+        return pred
