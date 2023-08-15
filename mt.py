@@ -62,10 +62,7 @@ def train_nc_model(args, model_nc, opt_nc, features, adj, labels, ano_labels, mo
 
         with torch.no_grad():
             model_nc.eval()
-            model_ad.eval()
             embed, prob_nc = model_nc(features, adj)
-            embed_ad, prob_ad = model_ad(torch.cat((features, prob_nc), dim=1), adj)
-            pred_ad = prob_ad.argmax(1)
             
             val_loss_sup = xent(prob_nc[idx_val], labels[idx_val])
 
@@ -73,7 +70,7 @@ def train_nc_model(args, model_nc, opt_nc, features, adj, labels, ano_labels, mo
                 val_loss_un = entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(pred_ad==0)[0]]) + 1/entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(pred_ad==1)[0]])
                 # val_loss_un = entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_val]==0)[0]])/entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_val]==1)[0]])
             elif args.loss == 'sum_div':
-                val_loss_un = entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_val]==0)[0]])+ 1/entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_val]==1)[0]])
+                val_loss_un = entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_val]==0)[0]]) + 1/entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_val]==1)[0]])
             elif args.loss == 'sum':
                 val_loss_un = entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_val]==0)[0]]) - entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_val]==1)[0]])
             else:
@@ -262,7 +259,6 @@ def main(args):
         os.makedirs(prefix)
     filename = prefix + str(args.seed)+ '_fixncb_'+ str(timestamp)
 
-    
 
     # Init annotation state
     state_an = torch.zeros(features.shape[0]) - 1
@@ -271,11 +267,10 @@ def main(args):
     state_an[idx_val] = 2
     state_an[idx_test] = 2
 
-    # Train model    
-    # pred_ad = None
+    # Train model
     budget_ad = int(2 * (args.max_budget - args.init_num) / args.iter_num)
-    for iter in range(args.iter_num + 1):
 
+    for iter in range(args.iter_num + 1):
         # Train node classification model
         model_nc, opt_nc = train_nc_model(args, model_nc, opt_nc, features, adj, labels, ano_labels, model_ad, idx_train_nc, idx_train_ad, idx_val, filename)
         embed_nc, prob_nc, test_acc_nc, test_acc_nc_id, test_f1macro_nc, test_f1micro_nc = test_nc_model(model_nc, features, adj, labels, ano_labels, idx_test)
