@@ -24,7 +24,7 @@ def entropy_loss(p, epsilon=1e-10):
     return batch_entropy.mean()
 
 
-def train_nc_model(args, model_nc, opt_nc, features, adj, labels, ano_labels, idx_train_nc, idx_train_ad, idx_val, idx_test, filename):
+def train_nc_model(args, model_nc, opt_nc, features, adj, labels, ano_labels, model_ad, idx_train_nc, idx_train_ad, idx_val, filename):
     xent = nn.CrossEntropyLoss()
     # Train node classification model
     patience = 20
@@ -40,17 +40,21 @@ def train_nc_model(args, model_nc, opt_nc, features, adj, labels, ano_labels, id
         
         loss_sup = xent(prob_nc[idx_train_nc], labels[idx_train_nc]) 
 
-        # loss_un = xent(prob_nc[torch.where(ano_labels[idx_train_ad]==1)[0]], prob_nc.argmax(dim=1)[torch.where(ano_labels[idx_train_ad]==1)[0]])
+        with torch.no_grad():
+            model_ad.eval()
+            embed_ad, prob_ad = model_ad(torch.cat((features, prob_nc), dim=1), adj)
+            pred_ad = prob_ad.argmax(1)
+
         if args.loss == 'div':
-            loss_un = entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_train_ad]==0)[0]])/entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_train_ad]==1)[0]])
+            loss_un = entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(pred_ad==0)[0]]) + 1/entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(pred_ad==1)[0]])
+            # loss_un = entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_train_ad]==0)[0]])/entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_train_ad]==1)[0]])
         elif args.loss == 'sum_div':
             loss_un = entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_train_ad]==0)[0]])+ 1/entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_train_ad]==1)[0]])
         elif args.loss == 'sum':
             loss_un = entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_train_ad]==0)[0]]) - entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_train_ad]==1)[0]])
         else:
             loss_un = 0
-        # loss_un = torch.mean(1-F.softmax(prob_nc,dim=1).max(dim=1)[0][torch.where(ano_labels[idx_train_ad]==0)[0]])
-        # loss_un = entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_train_ad]==0)[0]]) + entropy_loss(F.softmax(prob_nc,dim=1)[idx_train_nc])
+
         loss = loss_sup + args.w1 * loss_un
 
         loss.backward()
@@ -58,10 +62,25 @@ def train_nc_model(args, model_nc, opt_nc, features, adj, labels, ano_labels, id
 
         with torch.no_grad():
             model_nc.eval()
+            model_ad.eval()
             embed, prob_nc = model_nc(features, adj)
+            embed_ad, prob_ad = model_ad(torch.cat((features, prob_nc), dim=1), adj)
+            pred_ad = prob_ad.argmax(1)
             
-            val_loss = xent(prob_nc[idx_val], labels[idx_val])
+            val_loss_sup = xent(prob_nc[idx_val], labels[idx_val])
+
+            if args.loss == 'div':
+                val_loss_un = entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(pred_ad==0)[0]]) + 1/entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(pred_ad==1)[0]])
+                # val_loss_un = entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_val]==0)[0]])/entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_val]==1)[0]])
+            elif args.loss == 'sum_div':
+                val_loss_un = entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_val]==0)[0]])+ 1/entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_val]==1)[0]])
+            elif args.loss == 'sum':
+                val_loss_un = entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_val]==0)[0]]) - entropy_loss(F.softmax(prob_nc,dim=1)[torch.where(ano_labels[idx_val]==1)[0]])
+            else:
+                val_loss_un = 0
             
+            val_loss = val_loss_sup + args.w1 * val_loss_un
+
             nc_acc_val = accuracy(prob_nc[idx_val], labels[idx_val])
 
             print('Train Loss', "{:.5f}".format(loss.item()),
@@ -92,7 +111,7 @@ def train_nc_model(args, model_nc, opt_nc, features, adj, labels, ano_labels, id
 
     return model_nc, opt_nc
 
-def train_ad_model(args, model_ad, opt_ad, prob_nc, features, adj, ano_labels, idx_train_ad, idx_val, idx_test, filename):
+def train_ad_model(args, model_ad, opt_ad, prob_nc, features, adj, ano_labels, idx_train_ad, idx_val, filename):
     xent = nn.CrossEntropyLoss()
     weight = (1-ano_labels[idx_train_ad]).sum()/ano_labels[idx_train_ad].sum()
     # Train anomaly detection model
@@ -108,7 +127,7 @@ def train_ad_model(args, model_ad, opt_ad, prob_nc, features, adj, ano_labels, i
         embed, prob_ad = model_ad(torch.cat((features, prob_nc), dim=1), adj)
         
         # loss_ad = xent(prob_ad[idx_train_ad], ano_labels[idx_train_ad]) 
-        loss_ad = F.cross_entropy(prob_ad[idx_train_ad], ano_labels[idx_train_ad], weight=torch.tensor([torch.tensor(1.).cuda(), weight]).cuda())
+        loss_ad = F.cross_entropy(prob_ad[idx_train_ad], ano_labels[idx_train_ad], weight=torch.tensor([1., weight]).cuda())
 
         loss_ad.backward()
         opt_ad.step()
@@ -202,8 +221,6 @@ def main(args):
     adj = (adj + sp.eye(adj.shape[0])).todense()
 
     # Init Selection
-    # idx_train_nc = init_category_nc(args.nc_num, idx_train, labels, ano_labels)
-    # idx_train_ad = init_category(args.init_num, idx_train, ano_labels)
     idx_train_nc = np.loadtxt("splited_data/"+args.dataset+"/nc", dtype=int)
     idx_train_ad = np.loadtxt("splited_data/"+args.dataset+"/init", dtype=int)
 
@@ -255,17 +272,18 @@ def main(args):
     state_an[idx_test] = 2
 
     # Train model    
+    # pred_ad = None
     budget_ad = int(2 * (args.max_budget - args.init_num) / args.iter_num)
     for iter in range(args.iter_num + 1):
 
         # Train node classification model
-        model_nc, opt_nc = train_nc_model(args, model_nc, opt_nc, features, adj, labels, ano_labels, idx_train_nc, idx_train_ad, idx_val, idx_test, filename)
+        model_nc, opt_nc = train_nc_model(args, model_nc, opt_nc, features, adj, labels, ano_labels, model_ad, idx_train_nc, idx_train_ad, idx_val, filename)
         embed_nc, prob_nc, test_acc_nc, test_acc_nc_id, test_f1macro_nc, test_f1micro_nc = test_nc_model(model_nc, features, adj, labels, ano_labels, idx_test)
 
         # Train anomaly detection model
-        model_ad, opt_ad = train_ad_model(args, model_ad, opt_ad, prob_nc, features, adj, ano_labels, idx_train_ad, idx_val, idx_test, filename)
+        model_ad, opt_ad = train_ad_model(args, model_ad, opt_ad, prob_nc, features, adj, ano_labels, idx_train_ad, idx_val, filename)
         embed_ad, prob_ad, test_auc_ano, test_f1macro_ano, test_f1micro_ano, test_pre, test_rec, abnormal_num, normal_num = test_ad_model(model_ad, features, adj, ano_labels, prob_nc, idx_train_ad, idx_test)
-
+        
         # Node Selection
         if len(idx_train_ad) < args.max_budget * 2:
             idx_cand_an = torch.where(state_an==-1)[0]
@@ -281,6 +299,10 @@ def main(args):
                     idx_selected_ad = query_topk_medoids(embed_nc+embed_ad, prob_ad, budget_ad, idx_cand_an.tolist(), nb_classes)
                 elif args.strategy_ad == 'topk_medoids_1':
                     idx_selected_ad = query_topk_medoids(torch.cat((embed_nc,embed_ad),dim=1), prob_ad, budget_ad, idx_cand_an.tolist(), nb_classes)
+                elif args.strategy_ad == 'topk_medoids_2':
+                    idx_selected_ad = query_topk_medoids_m(embed_nc+embed_ad, prob_ad, budget_ad, idx_cand_an.tolist(), nb_classes)
+                elif args.strategy_ad == 'topk_medoids_3':
+                    idx_selected_ad = query_topk_medoids_m(torch.cat((embed_nc,embed_ad),dim=1), prob_ad, budget_ad, idx_cand_an.tolist(), nb_classes)    
                 elif args.strategy_ad == 'nc_entropy':
                     idx_selected_ad = query_nc_entropy(prob_nc, budget_ad, idx_cand_an.tolist())
                 elif args.strategy_ad == 'nc_minmax':
@@ -308,7 +330,7 @@ def main(args):
     if not os.path.exists(des_path):
         with open(des_path,'w+') as f:
             csv_write = csv.writer(f)
-            csv_head = ["model", "seed", "dataset", "init_num", "num_epochs","loss_type", "strategy_ad", "w1", "nc-acc", "nc-idacc", "nc-f1-micro", "nc-f1-macro", "ad-auc", "ad-f1-macro", "ad-pre-macro", "ad-rec-macro", "A-num", "N-num"]
+            csv_head = ["model", "seed", "dataset", "init_num", "num_epochs", "loss_type", "strategy_ad", "w1", "nc-acc", "nc-idacc", "nc-f1-micro", "nc-f1-macro", "ad-auc", "ad-f1-macro", "ad-pre-macro", "ad-rec-macro", "A-num", "N-num"]
             csv_write.writerow(csv_head)
 
     with open(des_path, 'a+') as f:
@@ -322,10 +344,10 @@ def main(args):
 if __name__ == '__main__':
     # Set argument
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str, default='citeseer')  # 'BlogCatalog'  'Flickr'  'cora'  'citeseer'  'pubmed'
+    parser.add_argument('--dataset', type=str, default='BlogCatalog')  # 'BlogCatalog'  'Flickr'  'cora'  'citeseer'  'pubmed'
     parser.add_argument('--lr', type=float, default=0.01)
     parser.add_argument('--weight_decay', type=float, default=0.0005)
-    parser.add_argument('--seed', type=int, default=528)
+    parser.add_argument('--seed', type=int, default=255)
     parser.add_argument('--embedding_dim', type=int, default=128)
     parser.add_argument('--init_num', type=int, default=2)
     parser.add_argument('--max_epoch', type=int, default=300)
@@ -336,7 +358,7 @@ if __name__ == '__main__':
     parser.add_argument('--device', type=int, default=1)
     parser.add_argument('--result_path', type=str, default='results/multitask')
 
-    parser.add_argument('--w1', type=float, default=0.8)
+    parser.add_argument('--w1', type=float, default=0.1)
     parser.add_argument('--loss', type=str, default='div')
 
     args = parser.parse_args()
