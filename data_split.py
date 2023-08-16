@@ -102,8 +102,10 @@ if __name__ == '__main__':
     for dataset in ['cora', 'citeseer', 'pubmed', 'BlogCatalog', 'Flickr', 'AmazonComputers', 'AmazonPhoto']:
 
         idx_init_ab = np.loadtxt("splited_data/"+dataset+"/init", dtype=int)
+        idx_init_nc = np.loadtxt("splited_data/"+dataset+"/nc", dtype=int)
         idx_train = np.loadtxt("splited_data/"+dataset+"/traincand", dtype=int)
-        idx_selected_ab = np.random.choice(idx_train, size=2*(k-init_num), replace=False)
+        idx_traincand = np.setdiff1d(idx_train,idx_init_nc) # no duplicate elements between idx_init_nc and ad
+        idx_selected_ab = np.random.choice(idx_traincand, size=2*(k-init_num), replace=False)
         idx_ab = np.hstack((idx_selected_ab, idx_init_ab)).tolist()
         random.shuffle(idx_ab)
 
