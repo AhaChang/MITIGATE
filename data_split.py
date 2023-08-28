@@ -29,20 +29,19 @@ def data_split(dataset_str, num_val, num_test):
     idx_test = idx_ab[num_val_ab:num_val_ab+num_test_ab] + idx_nor[num_val-num_val_ab:num_val-num_val_ab+num_test-num_test_ab]
     idx_train = idx_ab[num_val_ab+num_test_ab:] + idx_nor[num_val-num_val_ab+num_test-num_test_ab:]
 
-    idx_init = init_category(2, np.array(idx_train), labels).tolist()
-    idx_train = list(set(idx_train) - set(idx_init))
-    random.shuffle(idx_train)
+    # idx_init = init_category(2, np.array(idx_train), labels).tolist()
+    # idx_train = list(set(idx_train) - set(idx_init))
+    # random.shuffle(idx_train)
 
-    
-    
-    return idx_init, idx_train, idx_val, idx_test
+    return idx_train, idx_val, idx_test
 
 
-def init_category_nc(dataset_str, number):
+def init_category_nc(dataset_str, idx_train, number):
     # Load dataset
     data = sio.loadmat(f'dataset/{dataset_str}.mat')
-    labels = np.squeeze(np.array(data['Class'],dtype=np.int64))
+    labels = np.squeeze(np.array(data['Class'],dtype=np.int64))[idx_train]
     ano_labels = data['Label'] if ('Label' in data) else data['gnd']
+    ano_labels = ano_labels[idx_train]
 
     label_positions = {}
 
@@ -59,11 +58,11 @@ def init_category_nc(dataset_str, number):
     
     random.shuffle(random_positions_list)
 
-    return random_positions_list
+    return np.array(idx_train)[random_positions_list]
 
 
 if __name__ == '__main__':
-    seed = 1
+    seed = 2
     np.random.seed(seed)
     random.seed(seed)
 
@@ -71,47 +70,41 @@ if __name__ == '__main__':
     num_test = 1000
     
     for dataset in ['cora', 'citeseer', 'pubmed', 'BlogCatalog', 'Flickr', 'AmazonComputers', 'AmazonPhoto']:
-        idx_init, idx_train, idx_val, idx_test = data_split(dataset, num_val, num_test)
+        # Load dataset
+        data = sio.loadmat(f'dataset/{dataset}.mat')
+        labels = data['Label'] if ('Label' in data) else data['gnd']
+
+        idx_train, idx_val, idx_test = data_split(dataset, num_val, num_test)
 
         directory = "splited_data/" + dataset + "/"
 
         if not os.path.exists(directory):
             os.makedirs(directory)
 
-        np.savetxt(directory+'init', idx_init, fmt='%d', delimiter=' ', newline='\n')
         np.savetxt(directory+'traincand', idx_train, fmt='%d', delimiter=' ', newline='\n')
         np.savetxt(directory+'val', idx_val, fmt='%d', delimiter=' ', newline='\n')
         np.savetxt(directory+'test', idx_test, fmt='%d', delimiter=' ', newline='\n')
 
 
-    nc_num = 20 # sample 20k nodes
+        nc_num = 20 # sample 20k nodes for node classification
 
-    for dataset in ['cora', 'citeseer', 'pubmed', 'BlogCatalog', 'Flickr', 'AmazonComputers', 'AmazonPhoto']:
-        idx_nc = init_category_nc(dataset, nc_num)
-
-        directory = "splited_data/" + dataset + "/"
-
-        if not os.path.exists(directory):
-            os.makedirs(directory)
+        idx_nc = init_category_nc(dataset, idx_train, nc_num)
 
         np.savetxt(directory+'nc', idx_nc, fmt='%d', delimiter=' ', newline='\n')
 
-    
-    k=20
-    init_num = 2
-    for dataset in ['cora', 'citeseer', 'pubmed', 'BlogCatalog', 'Flickr', 'AmazonComputers', 'AmazonPhoto']:
+        idx_traincand = np.setdiff1d(idx_train,idx_nc) # no duplicate elements between idx_nc and ad
 
-        idx_init_ab = np.loadtxt("splited_data/"+dataset+"/init", dtype=int)
-        idx_init_nc = np.loadtxt("splited_data/"+dataset+"/nc", dtype=int)
-        idx_train = np.loadtxt("splited_data/"+dataset+"/traincand", dtype=int)
-        idx_traincand = np.setdiff1d(idx_train,idx_init_nc) # no duplicate elements between idx_init_nc and ad
-        idx_selected_ab = np.random.choice(idx_traincand, size=2*(k-init_num), replace=False)
-        idx_ab = np.hstack((idx_selected_ab, idx_init_ab)).tolist()
-        random.shuffle(idx_ab)
 
-        directory = "splited_data/" + dataset + "/"
+        ad_num = 20 # sample 20k nodes for anomaly detection
+        anomaly_ratio = labels[idx_train].sum() / labels[idx_train].shape[0]
 
-        if not os.path.exists(directory):
-            os.makedirs(directory)
+        # selected_a = np.random.choice(np.where(labels[idx_traincand]==1)[0], size=int(anomaly_ratio*ad_num*2), replace=False)
+        # selected_n = np.random.choice(np.where(labels[idx_traincand]==0)[0], size=ad_num*2-int(anomaly_ratio*ad_num*2), replace=False)
+        # idx_ad = idx_traincand[np.hstack((selected_a, selected_n))].tolist()
 
-        np.savetxt(directory+'ad', idx_ab, fmt='%d', delimiter=' ', newline='\n')
+        idx_ad = np.random.choice(idx_traincand, size=ad_num*2, replace=False)
+
+        random.shuffle(idx_ad)
+        print(labels[idx_ad].sum())
+
+        np.savetxt(directory+'ad', idx_ad, fmt='%d', delimiter=' ', newline='\n')
