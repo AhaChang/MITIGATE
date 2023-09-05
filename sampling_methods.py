@@ -59,20 +59,17 @@ def get_density_score(features, nb_cluster):
     edprec = torch.FloatTensor([percd(ed_score,i) for i in range(len(ed_score))]).cuda()
     return edprec
 
-
 def query_random(number, nodes_idx):
     return np.random.choice(nodes_idx, size=number, replace=False)
 
 def query_largest_degree(nx_graph, number, nodes_idx):
     degree_dict = dict(nx_graph.degree(nodes_idx))
     idx_topk = nlargest(number, degree_dict, key=degree_dict.get)
-    # print(idx_topk)
     return idx_topk
 
 def query_featprop(features, number, nodes_idx):
     features = features.cpu().numpy()
     X = features[nodes_idx]
-    # print('X: ', X)
     t1 = perf_counter()
     distances = pairwise_distances(X, X)
     print('computer pairwise_distances: {}s'.format(perf_counter() - t1))
@@ -85,40 +82,6 @@ def query_entropy(prob, number, nodes_idx):
     indices = torch.topk(entropy, number, largest=True)[1]
     indices = list(indices.cpu().numpy())
     return np.array(nodes_idx)[indices]
-
-def query_nc_minmax(prob, number, nodes_idx):
-    max_scores = F.softmax(prob, dim=1)[nodes_idx].max(1)[0]
-    indices = torch.topk(max_scores, number, largest=False)[1] # 最小的最大概率
-    indices = list(indices.cpu().numpy())
-    return np.array(nodes_idx)[indices]
-
-def query_nc_entropy(prob, number, nodes_idx):
-    output = prob[nodes_idx]
-    entropy = get_entropy_score(output)
-    indices = torch.topk(entropy, number, largest=True)[1]
-    indices = list(indices.cpu().numpy())
-    return np.array(nodes_idx)[indices]
-
-
-def query_nc_ano(prob_nc, prob_ad, number, nodes_idx, val_res):
-    # node classification label distribution
-    output_nc = prob_nc[nodes_idx]
-    entropy_nc = get_entropy_score(output_nc)
-    entropy_nc_nor = (entropy_nc - entropy_nc.min())/(entropy_nc.max()-entropy_nc.min())
-    # anomay detection anomaly score
-    output_ad = prob_ad[nodes_idx]
-    score_ad = F.softmax(output_ad, dim=1).detach()[:,-1]
-    score_ad_nor = (score_ad - score_ad.min())/(score_ad.max()-score_ad.min())
-    # 
-    # if val_res<0.5:
-    #     total_score = entropy_nc_nor
-    # else:
-    #     total_score = (1-val_res) * entropy_nc_nor + val_res * score_ad_nor
-    total_score =(1-val_res) * entropy_nc_nor + val_res * score_ad_nor
-    indices = torch.topk(total_score, number, largest=True)[1]
-    indices = list(indices.cpu().numpy())
-    return np.array(nodes_idx)[indices]
-
 
 def query_density(embeds, number, nodes_idx, labels):
     unique_labels = torch.unique(labels)
@@ -143,7 +106,6 @@ def query_featprop(features, number, nodes_idx):
     clusters, medoids = k_medoids(distances, k=number)
     return np.array(nodes_idx)[medoids]
 
-
 def query_topk_anomaly(prob, number, nodes_idx):
     output = prob[nodes_idx]
     prob_output = F.softmax(output, dim=1).detach()
@@ -151,7 +113,7 @@ def query_topk_anomaly(prob, number, nodes_idx):
     indices = list(indices.cpu().numpy())
     return np.array(nodes_idx)[indices]
 
-def query_topk_medoids(embed, prob_ad, number, nodes_idx, nb_classes):
+def query_top2k_medoids(embed, prob_ad, number, nodes_idx, nb_classes):
     embed = embed[nodes_idx].cpu().numpy()
     distances = pairwise_distances(embed, embed)
     clusters, medoids = k_medoids(distances, k=nb_classes*2)
@@ -159,15 +121,69 @@ def query_topk_medoids(embed, prob_ad, number, nodes_idx, nb_classes):
     indices = list(indices.cpu().numpy())
     return medoids[indices]
 
-def query_topk_medoids_m(embed, prob_ad, number, nodes_idx, nb_classes):
+def query_topk1_medoids(embed, prob_ad, number, nodes_idx, nb_classes):
     embed = embed[nodes_idx].cpu().numpy()
     distances = pairwise_distances(embed, embed)
     clusters, medoids = k_medoids(distances, k=nb_classes+1)
     medoids_ano = medoids[prob_ad[:,-1][medoids].argmax()]
     indices = np.where(clusters==medoids_ano)[0]
-    e = np.random.choice(indices, size=number, replace=False)
-    # e = indices[torch.topk(prob_ad[np.array(nodes_idx)[indices]][:,1], number, largest=True)[1].cpu()]
+    # e = np.random.choice(indices, size=number, replace=False)
+    e = indices[torch.topk(prob_ad[np.array(nodes_idx)[indices]][:,1], number, largest=True)[1].cpu()]
     return np.array(nodes_idx)[e]
+
+def query_top2k_medoids_s(embed, prob_nc, prob_ad, number, nodes_idx, nb_classes, weight=0.5):
+    entropy = get_entropy_score(prob_nc)
+    prob_ad = torch.softmax(prob_ad, dim=1)
+    pred_ascores = prob_ad[:,1]
+
+    scores = weight * (entropy-entropy.min())/(entropy.max()-entropy.min()) + (1-weight) * (pred_ascores-pred_ascores.min())/(pred_ascores.max()-pred_ascores.min())
+
+    embed = embed[nodes_idx].cpu().numpy()
+    distances = pairwise_distances(embed, embed)
+    clusters, medoids = k_medoids(distances, k=nb_classes*2)
+    indices = torch.topk(scores[medoids], number, largest=True)[1]
+    indices = list(indices.cpu().numpy())
+    return medoids[indices]
+
+def query_topk1_medoids_s(embed, prob_nc, prob_ad, number, nodes_idx, nb_classes, weight=0.5):
+    entropy = get_entropy_score(prob_nc)
+    prob_ad = torch.softmax(prob_ad, dim=1)
+    pred_ascores = prob_ad[:,1]
+
+    scores = weight * (entropy-entropy.min())/(entropy.max()-entropy.min()) + (1-weight) * (pred_ascores-pred_ascores.min())/(pred_ascores.max()-pred_ascores.min())
+
+    embed = embed[nodes_idx].cpu().numpy()
+    distances = pairwise_distances(embed, embed)
+    clusters, medoids = k_medoids(distances, k=nb_classes+1)
+    medoids_ano = medoids[scores[medoids].argmax()]
+    indices = np.where(clusters==medoids_ano)[0]
+
+    indices_1 = torch.topk(scores[indices], number, largest=True)[1]
+    indices_1 = list(indices_1.cpu().numpy())
+    return np.array(nodes_idx)[indices_1]
+
+def query_topk_nent_ascore(prob_nc, prob_ad, number, nodes_idx, weight):
+    entropy = get_entropy_score(prob_nc)
+    prob_ad = torch.softmax(prob_ad, dim=1)
+    pred_ascores = prob_ad[:,1]
+
+    scores = weight * (entropy-entropy.min())/(entropy.max()-entropy.min()) + (1-weight) * (pred_ascores-pred_ascores.min())/(pred_ascores.max()-pred_ascores.min())
+
+    indices = torch.topk(scores[nodes_idx], number, largest=True)[1]
+    indices = list(indices.cpu().numpy())
+    return np.array(nodes_idx)[indices]
+
+
+def query_topk_nent_aent(prob_nc, prob_ad, number, nodes_idx, weight):
+    entropy = get_entropy_score(prob_nc)
+    prob_ad = torch.softmax(prob_ad, dim=1)
+    a_entropy = get_entropy_score(prob_ad)
+
+    scores = weight * (entropy-entropy.min())/(entropy.max()-entropy.min()) + (1-weight) * (a_entropy-a_entropy.min())/(a_entropy.max()-a_entropy.min())
+    indices = torch.topk(scores[nodes_idx], number, largest=True)[1]
+    indices = list(indices.cpu().numpy())
+    return np.array(nodes_idx)[indices]
+
 
 def return_community(number, nodes_idx, labels):
     unique_labels = torch.unique(labels)
@@ -179,8 +195,8 @@ def return_community(number, nodes_idx, labels):
     return res
 
 def return_anomaly(number, nodes_idx, ano_labels):
-    ano_node_idx = torch.LongTensor(nodes_idx)[torch.where(ano_labels[nodes_idx]==1)[0]]
-    nor_node_idx = torch.LongTensor(nodes_idx)[torch.where(ano_labels[nodes_idx]==0)[0]]
+    ano_node_idx = np.array(nodes_idx)[np.where(ano_labels[nodes_idx]==1)[0]]
+    nor_node_idx = np.array(nodes_idx)[np.where(ano_labels[nodes_idx]==0)[0]]
     return np.hstack((np.random.choice(ano_node_idx, size=number//2, replace=False),np.random.choice(nor_node_idx, size=number//2, replace=False)))
 
 def k_medoids(distances, k=3):
@@ -263,110 +279,3 @@ def compute_new_medoid(cluster, distances):
     # print(f'new_medoid: {cluster[min_idx]}')
     return cluster[min_idx]
 
-
-
-def query_t3(adj, prob_nc, prob_ad, number, nodes_idx):
-    '''
-    The sum of entropy in the neighborhood
-    '''
-    comm_score = F.softmax(prob_nc,dim=1)
-    ano_score = F.softmax(prob_ad, dim=1)[:,1]
-
-    log_comm_score = torch.log_softmax(comm_score, dim=1).detach()
-    stru_comm_entropy = -torch.sum(comm_score*log_comm_score, dim=1)
-    nb_comm_entropy = torch.mm(adj, stru_comm_entropy.view(-1,1))
-
-    final_score = nb_comm_entropy.view(-1) * (ano_score)
-
-    indices = torch.topk(final_score[nodes_idx], number, largest=True)[1]
-    indices = list(indices.cpu().numpy())
-
-    return np.array(nodes_idx)[indices]
-
-
-def query_t1(embed, prob_nc, prob_ad, number, nodes_idx, labels, idx_train_nc):
-    '''
-    Embedding center -- the mean of embeddings of labeled nodes
-    Pseudo anomaly labels -- to remove predicted ood nodes
-    Target: Identify the predicted in-distribution nodes that are farthest from the embedding center
-    '''
-    unique_labels = torch.unique(labels[idx_train_nc])
-    anomaly_label  = F.softmax(prob_ad, dim=1).argmax(1)
-
-    k = number // unique_labels.shape[0]
-    grouped_indices = {label.item(): idx_train_nc[labels[idx_train_nc] == label] for label in unique_labels}
-    centers = {label: embed[indices].mean(dim=0) for label, indices in grouped_indices.items()}
-
-    argmax_result = prob_nc.argmax(dim=1)[nodes_idx]
-    embeds_id0 = {label.item(): torch.LongTensor(nodes_idx)[labels[nodes_idx] == label] for label in unique_labels} # devide the community with actual labels 
-    embeds_id = {label.item(): torch.LongTensor(nodes_idx)[(anomaly_label[nodes_idx]==0) & (argmax_result==label)] for label in unique_labels} # remove predicted anomalies
-
-    selected = torch.LongTensor()
-    for label in unique_labels:
-        if embeds_id[label.item()].shape[0]<k:
-            if embeds_id[label.item()].shape[0]>0:
-                distances = torch.sum((embed[embeds_id[label.item()]] - centers[label.item()])**2, dim=1)
-                indices = torch.topk(distances, embeds_id[label.item()].shape[0], largest=True)[1]
-                indices = embeds_id[label.item()][indices]
-                selected = torch.cat((selected,indices))
-
-            distances = torch.sum((embed[embeds_id0[label.item()]] - centers[label.item()])**2, dim=1)
-            indices = torch.topk(distances, k-embeds_id[label.item()].shape[0], largest=True)[1]
-            indices = embeds_id0[label.item()][indices]
-            selected = torch.cat((selected,indices))
-        else:  
-            distances = torch.sum((embed[embeds_id[label.item()]] - centers[label.item()])**2, dim=1)
-            indices = torch.topk(distances, k, largest=True)[1]
-            indices = embeds_id[label.item()][indices]
-            selected = torch.cat((selected,indices))
-
-    return selected
-
-
-def query_t5(embed, prob_nc, prob_ad, number, nodes_idx, labels, idx_train_nc):
-    '''
-    Embedding center -- the mean of embeddings of labeled nodes
-    Anomaly scores
-    Target: Identify the predicted in-distribution nodes that are farthest from the embedding center
-    '''
-    unique_labels = torch.unique(labels[idx_train_nc])
-    anomaly_scores  = F.softmax(prob_ad, dim=1)[:,1]
-
-    k = number // unique_labels.shape[0]
-    grouped_indices = {label.item(): idx_train_nc[labels[idx_train_nc] == label] for label in unique_labels}
-    centers = {label: embed[indices].mean(dim=0) for label, indices in grouped_indices.items()}
-
-    argmax_result = prob_nc.argmax(dim=1)[nodes_idx]
-    embeds_id = {label.item(): torch.LongTensor(nodes_idx)[argmax_result == label] for label in unique_labels}
-
-    selected = torch.LongTensor()
-    for label in unique_labels:
-        distances = torch.sum((embed[embeds_id[label.item()]] - centers[label.item()])**2, dim=1)
-        distances_ano = distances * (1 - anomaly_scores[embeds_id[label.item()]])
-        if distances_ano.shape[0]>k:
-            indices = torch.topk(distances_ano, k, largest=True)[1]
-        else:
-            indices = torch.topk(distances_ano, distances_ano.shape[0], largest=True)[1]
-
-        indices = embeds_id[label.item()][indices]
-        selected = torch.cat((selected,indices))
-
-    return selected
-
-def query_t7(adj, prob_nc, prob_ad, number, nodes_idx):
-    '''
-    The sum of entropy in the neighborhood
-    '''
-    ano_entropy = get_entropy_score(prob_ad)
-    comm_entropy = get_entropy_score(prob_nc)
-
-    total_entropy = ano_entropy * comm_entropy
-
-    nb_comm_entropy = torch.mm(adj, total_entropy.view(-1,1))
-
-    final_score = nb_comm_entropy.view(-1) 
-
-    indices = torch.topk(final_score[nodes_idx], number, largest=True)[1]
-    indices = list(indices.cpu().numpy())
-
-    return np.array(nodes_idx)[indices]

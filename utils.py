@@ -70,17 +70,11 @@ def load_mat(dataset, train_rate=0.3, val_rate=0.1):
 
     # labels = np.squeeze(np.array(data['Class'],dtype=np.int64) - 1)
     labels = np.squeeze(np.array(data['Class'],dtype=np.int64))
-    num_classes = np.max(labels) + 1
-    # labels = dense_to_one_hot(labels,num_classes)
 
+    if dataset == 'BlogCatalog' or dataset == 'Flickr' :
+        labels = labels - 1
 
     ano_labels = np.squeeze(np.array(label))
-    if 'str_anomaly_label' in data:
-        str_ano_labels = np.squeeze(np.array(data['str_anomaly_label']))
-        attr_ano_labels = np.squeeze(np.array(data['attr_anomaly_label']))
-    else:
-        str_ano_labels = None
-        attr_ano_labels = None
 
     num_node = adj.shape[0]
     num_train = int(num_node * train_rate)
@@ -91,7 +85,7 @@ def load_mat(dataset, train_rate=0.3, val_rate=0.1):
     idx_val = all_idx[num_train : num_train + num_val]
     idx_test = all_idx[num_train + num_val : ]
 
-    return adj, feat, labels, idx_train, idx_val, idx_test, ano_labels, str_ano_labels, attr_ano_labels
+    return adj, feat, labels, idx_train, idx_val, idx_test, ano_labels
 
 
 def load_mat_f(dataset):
@@ -110,18 +104,11 @@ def load_mat_f(dataset):
 
     ano_labels = np.squeeze(np.array(label))
 
-    if 'str_anomaly_label' in data:
-        str_ano_labels = np.squeeze(np.array(data['str_anomaly_label']))
-        attr_ano_labels = np.squeeze(np.array(data['attr_anomaly_label']))
-    else:
-        str_ano_labels = None
-        attr_ano_labels = None
-
     idx_train = np.loadtxt("splited_data/"+dataset+"/traincand", dtype=int)
     idx_val = np.loadtxt("splited_data/"+dataset+"/val", dtype=int)
     idx_test = np.loadtxt("splited_data/"+dataset+"/test", dtype=int)
 
-    return adj, feat, labels, idx_train, idx_val, idx_test, ano_labels, str_ano_labels, attr_ano_labels
+    return adj, feat, labels, idx_train, idx_val, idx_test, ano_labels
 
 
 def adj_to_dgl_graph(adj):
