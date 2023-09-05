@@ -105,6 +105,9 @@ def load_mat_f(dataset):
     feat = sp.lil_matrix(attr)
 
     labels = np.squeeze(np.array(data['Class'],dtype=np.int64))
+    if dataset == 'BlogCatalog' or dataset == 'Flickr' :
+        labels = labels - 1
+
     ano_labels = np.squeeze(np.array(label))
 
     if 'str_anomaly_label' in data:
