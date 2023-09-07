@@ -108,10 +108,12 @@ if args.n is None:
         n = 5
     elif dataset_str == 'BlogCatalog':
         n = 10
-    elif dataset_str == 'Flickr':
+    elif dataset_str == 'Flickr' or dataset_str == 'AmazonPhoto':
         n = 15
-    elif dataset_str == 'pubmed'  or dataset_str == 'AmazonComputers'  or dataset_str == 'AmazonPhoto':
+    elif dataset_str == 'pubmed':
         n = 20
+    elif dataset_str == 'AmazonComputers':
+        n = 25
 else:
     n = args.n
 
