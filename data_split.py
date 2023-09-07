@@ -70,6 +70,7 @@ if __name__ == '__main__':
     num_test = 1000
     
     for dataset in ['cora', 'citeseer', 'pubmed', 'BlogCatalog', 'Flickr', 'AmazonComputers', 'AmazonPhoto']:
+    # for dataset in ['AmazonComputers', 'AmazonPhoto']:
         # Load dataset
         data = sio.loadmat(f'dataset/{dataset}.mat')
         labels = data['Label'] if ('Label' in data) else data['gnd']
