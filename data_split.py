@@ -60,52 +60,70 @@ def init_category_nc(dataset_str, idx_train, number):
 
     return np.array(idx_train)[random_positions_list]
 
+def split_cvt(dataset, directory, num_val, num_test):
+    idx_train, idx_val, idx_test = data_split(dataset, num_val, num_test)
+
+    np.savetxt(directory+'traincand', idx_train, fmt='%d', delimiter=' ', newline='\n')
+    np.savetxt(directory+'val', idx_val, fmt='%d', delimiter=' ', newline='\n')
+    np.savetxt(directory+'test', idx_test, fmt='%d', delimiter=' ', newline='\n')
+
+
+def select_nc(dataset, directory, nc_num):
+    idx_train = np.loadtxt("splited_data/"+dataset+"/traincand", dtype=int)
+    idx_nc = init_category_nc(dataset, idx_train, nc_num)
+    np.savetxt(directory+'nc', idx_nc, fmt='%d', delimiter=' ', newline='\n')
+
+def select_ad(dataset, directory, ad_num):
+    idx_train = np.loadtxt("splited_data/"+dataset+"/traincand", dtype=int)
+    idx_nc = np.loadtxt("splited_data/"+dataset+"/nc", dtype=int)
+    idx_traincand = np.setdiff1d(idx_train,idx_nc) # no duplicate elements between idx_nc and ad
+
+    idx_ad = np.random.choice(idx_traincand, size=ad_num*2, replace=False)
+    random.shuffle(idx_ad)
+    np.savetxt(directory+'ad_'+str(ad_num), idx_ad, fmt='%d', delimiter=' ', newline='\n')
+
+    return idx_ad
+
+# if __name__ == '__main__':
+#     seed = 1
+#     np.random.seed(seed)
+#     random.seed(seed)
+
+#     num_val = 500
+#     num_test = 1000
+    
+#     for dataset in ['cora', 'citeseer', 'pubmed', 'BlogCatalog', 'Flickr', 'AmazonComputers', 'AmazonPhoto']:
+
+#         directory = "splited_data/" + dataset + "/"
+
+#         if not os.path.exists(directory):
+#             os.makedirs(directory)
+
+#         split_cvt(dataset, directory, num_val, num_test)
+
+#         # sample 20k nodes for node classification
+#         nc_num = 20
+#         select_nc(dataset, directory, nc_num)
+
 
 if __name__ == '__main__':
-    seed = 2
+    seed = 1
     np.random.seed(seed)
     random.seed(seed)
 
-    num_val = 500
-    num_test = 1000
-    
     for dataset in ['cora', 'citeseer', 'pubmed', 'BlogCatalog', 'Flickr', 'AmazonComputers', 'AmazonPhoto']:
-    # for dataset in ['AmazonComputers', 'AmazonPhoto']:
-        # Load dataset
-        data = sio.loadmat(f'dataset/{dataset}.mat')
-        labels = data['Label'] if ('Label' in data) else data['gnd']
-
-        idx_train, idx_val, idx_test = data_split(dataset, num_val, num_test)
-
         directory = "splited_data/" + dataset + "/"
 
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-
-        np.savetxt(directory+'traincand', idx_train, fmt='%d', delimiter=' ', newline='\n')
-        np.savetxt(directory+'val', idx_val, fmt='%d', delimiter=' ', newline='\n')
-        np.savetxt(directory+'test', idx_test, fmt='%d', delimiter=' ', newline='\n')
-
-
-        nc_num = 20 # sample 20k nodes for node classification
-
-        idx_nc = init_category_nc(dataset, idx_train, nc_num)
-
-        np.savetxt(directory+'nc', idx_nc, fmt='%d', delimiter=' ', newline='\n')
-
-        idx_traincand = np.setdiff1d(idx_train,idx_nc) # no duplicate elements between idx_nc and ad
-
-
-        ad_num = 20 # sample 20k nodes for anomaly detection
-        anomaly_ratio = labels[idx_train].sum() / labels[idx_train].shape[0]
-
-        # selected_a = np.random.choice(np.where(labels[idx_traincand]==1)[0], size=int(anomaly_ratio*ad_num*2), replace=False)
-        # selected_n = np.random.choice(np.where(labels[idx_traincand]==0)[0], size=ad_num*2-int(anomaly_ratio*ad_num*2), replace=False)
-        # idx_ad = idx_traincand[np.hstack((selected_a, selected_n))].tolist()
-
-        idx_ad = np.random.choice(idx_traincand, size=ad_num*2, replace=False)
-
-        random.shuffle(idx_ad)
-        print(labels[idx_ad].sum())
-
-        np.savetxt(directory+'ad', idx_ad, fmt='%d', delimiter=' ', newline='\n')
+        data = sio.loadmat("./dataset/{}.mat".format(dataset))
+        label = data['Label'] if ('Label' in data) else data['gnd']
+        
+        print(dataset)
+        
+        # sample nodes for anomaly detection
+        for ad_num in [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]:
+            idx_ad = select_ad(dataset, directory, ad_num)
+            
+            while label[idx_ad].sum() == 0:
+                idx_ad = select_ad(dataset, directory, ad_num)
+            
+            print(label[idx_ad].sum())
