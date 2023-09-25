@@ -67,15 +67,6 @@ def query_largest_degree(nx_graph, number, nodes_idx):
     idx_topk = nlargest(number, degree_dict, key=degree_dict.get)
     return idx_topk
 
-def query_featprop(features, number, nodes_idx):
-    features = features.cpu().numpy()
-    X = features[nodes_idx]
-    t1 = perf_counter()
-    distances = pairwise_distances(X, X)
-    print('computer pairwise_distances: {}s'.format(perf_counter() - t1))
-    clusters, medoids = k_medoids(distances, k=number)
-    return np.array(nodes_idx)[medoids]
-
 def query_entropy(prob, number, nodes_idx):
     output = prob[nodes_idx]
     entropy = get_entropy_score(output).detach()
@@ -99,13 +90,6 @@ def query_entropy_density(embeds, prob, number, nodes_idx, labels):
     indices = list(indices.cpu().numpy())
     return np.array(nodes_idx)[indices]
 
-def query_featprop(features, number, nodes_idx):
-    features = features.cpu().numpy()
-    X = features[nodes_idx]
-    distances = pairwise_distances(X, X)
-    clusters, medoids = k_medoids(distances, k=number)
-    return np.array(nodes_idx)[medoids]
-
 def query_topk_anomaly(prob, number, nodes_idx):
     output = prob[nodes_idx]
     prob_output = F.softmax(output, dim=1).detach()
@@ -120,7 +104,6 @@ def query_medoids(embed, prob_ad, number, nodes_idx, cluster_n):
     indices = torch.topk(prob_ad[:,-1][medoids], number, largest=True)[1]
     indices = list(indices.cpu().numpy())
     return nodes_idx[medoids][indices]
-
 
 def query_medoids_spec_nent_diff(adj, embed, prob_nc, prob_ad, number, nodes_idx, cluster_n, weight=0.5):
     n_entropy = get_entropy_score(prob_nc).detach()
