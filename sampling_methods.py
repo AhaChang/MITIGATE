@@ -47,8 +47,8 @@ def init_category_nc(number, nodes_idx, labels, ano_labels):
 def percd(input,k): return sum([1 if i else 0 for i in input>input[k]])/float(len(input))
 
 def get_entropy_score(output):
-    prob_output = F.softmax(output, dim=1).detach()
-    log_prob_output = F.log_softmax(output, dim=1).detach()
+    prob_output = F.softmax(output, dim=1)
+    log_prob_output = F.log_softmax(output, dim=1)
     entropy = -torch.sum(prob_output*log_prob_output, dim=1)
     return entropy
 
@@ -78,7 +78,7 @@ def query_featprop(features, number, nodes_idx):
 
 def query_entropy(prob, number, nodes_idx):
     output = prob[nodes_idx]
-    entropy = get_entropy_score(output)
+    entropy = get_entropy_score(output).detach()
     indices = torch.topk(entropy, number, largest=True)[1]
     indices = list(indices.cpu().numpy())
     return np.array(nodes_idx)[indices]
@@ -93,7 +93,7 @@ def query_density(embeds, number, nodes_idx, labels):
 def query_entropy_density(embeds, prob, number, nodes_idx, labels):
     unique_labels = torch.unique(labels)
     edprec = get_density_score(embeds[nodes_idx].cpu(), unique_labels.shape[0])
-    entropy = get_entropy_score(prob[nodes_idx])
+    entropy = get_entropy_score(prob[nodes_idx]).detach()
     finalweight = edprec + entropy
     indices = torch.topk(finalweight, number, largest=True)[1]
     indices = list(indices.cpu().numpy())
@@ -113,61 +113,112 @@ def query_topk_anomaly(prob, number, nodes_idx):
     indices = list(indices.cpu().numpy())
     return np.array(nodes_idx)[indices]
 
-def query_top2k_medoids(embed, prob_ad, number, nodes_idx, nb_classes):
+def query_medoids(embed, prob_ad, number, nodes_idx, cluster_n):
     embed = embed[nodes_idx].cpu().numpy()
     distances = pairwise_distances(embed, embed)
-    clusters, medoids = k_medoids(distances, k=nb_classes*2)
+    clusters, medoids = k_medoids(distances, k=cluster_n)
     indices = torch.topk(prob_ad[:,-1][medoids], number, largest=True)[1]
     indices = list(indices.cpu().numpy())
-    return medoids[indices]
+    return nodes_idx[medoids][indices]
 
-def query_topk1_medoids(embed, prob_ad, number, nodes_idx, nb_classes):
-    embed = embed[nodes_idx].cpu().numpy()
-    distances = pairwise_distances(embed, embed)
-    clusters, medoids = k_medoids(distances, k=nb_classes+1)
-    medoids_ano = medoids[prob_ad[:,-1][medoids].argmax()]
-    indices = np.where(clusters==medoids_ano)[0]
-    # e = np.random.choice(indices, size=number, replace=False)
-    e = indices[torch.topk(prob_ad[np.array(nodes_idx)[indices]][:,1], number, largest=True)[1].cpu()]
-    return np.array(nodes_idx)[e]
 
-def query_top2k_medoids_s(embed, prob_nc, prob_ad, number, nodes_idx, nb_classes, weight=0.5):
-    entropy = get_entropy_score(prob_nc)
+def query_medoids_spec_nent_diff(adj, embed, prob_nc, prob_ad, number, nodes_idx, cluster_n, weight=0.5):
+    n_entropy = get_entropy_score(prob_nc).detach()
     prob_ad = torch.softmax(prob_ad, dim=1)
-    pred_ascores = prob_ad[:,1]
+    a_scores = prob_ad[:,1]
 
-    scores = weight * (entropy-entropy.min())/(entropy.max()-entropy.min()) + (1-weight) * (pred_ascores-pred_ascores.min())/(pred_ascores.max()-pred_ascores.min())
+    scores_diff = torch.abs((n_entropy-n_entropy.mean())/(n_entropy.std()) - (a_scores-a_scores.mean())/(a_scores.std()))
 
-    embed = embed[nodes_idx].cpu().numpy()
+    scores = weight * (n_entropy-n_entropy.mean())/(n_entropy.std()) + (1-weight) * scores_diff
+
+    nodes_idx = np.array(nodes_idx)
+    embed = torch.mm(adj[nodes_idx][:,nodes_idx],embed[nodes_idx])
+    embed = embed.cpu().numpy()
     distances = pairwise_distances(embed, embed)
-    clusters, medoids = k_medoids(distances, k=nb_classes*2)
-    indices = torch.topk(scores[medoids], number, largest=True)[1]
+
+    clusters, medoids = k_medoids(distances, k=cluster_n)
+    indices = torch.topk(scores[nodes_idx[medoids]], number, largest=True)[1]
     indices = list(indices.cpu().numpy())
-    return medoids[indices]
+    return nodes_idx[medoids][indices]
 
-def query_topk1_medoids_s(embed, prob_nc, prob_ad, number, nodes_idx, nb_classes, weight=0.5):
-    entropy = get_entropy_score(prob_nc)
-    prob_ad = torch.softmax(prob_ad, dim=1)
-    pred_ascores = prob_ad[:,1]
 
-    scores = weight * (entropy-entropy.min())/(entropy.max()-entropy.min()) + (1-weight) * (pred_ascores-pred_ascores.min())/(pred_ascores.max()-pred_ascores.min())
+def query_medoids_spec_nent(adj, embed, prob_nc, number, nodes_idx, cluster_n):
+    n_entropy = get_entropy_score(prob_nc).detach()
 
-    embed = embed[nodes_idx].cpu().numpy()
+    scores = (n_entropy-n_entropy.mean())/(n_entropy.std())
+
+    nodes_idx = np.array(nodes_idx)
+    embed = torch.mm(adj[nodes_idx][:,nodes_idx],embed[nodes_idx])
+    embed = embed.cpu().numpy()
     distances = pairwise_distances(embed, embed)
-    clusters, medoids = k_medoids(distances, k=nb_classes+1)
-    medoids_ano = medoids[scores[medoids].argmax()]
-    indices = np.where(clusters==medoids_ano)[0]
 
-    indices_1 = torch.topk(scores[indices], number, largest=True)[1]
-    indices_1 = list(indices_1.cpu().numpy())
-    return np.array(nodes_idx)[indices_1]
+    clusters, medoids = k_medoids(distances, k=cluster_n)
+    indices = torch.topk(scores[nodes_idx[medoids]], number, largest=True)[1]
+    indices = list(indices.cpu().numpy())
+    return nodes_idx[medoids][indices]
 
-def query_topk_nent_ascore(prob_nc, prob_ad, number, nodes_idx, weight):
-    entropy = get_entropy_score(prob_nc)
+def query_medoids_spec_diff(adj, embed, prob_nc, prob_ad, number, nodes_idx, cluster_n):
+    n_entropy = get_entropy_score(prob_nc).detach()
+    prob_ad = torch.softmax(prob_ad, dim=1)
+    a_scores = prob_ad[:,1]
+
+    scores_diff = torch.abs((n_entropy-n_entropy.mean())/(n_entropy.std()) - (a_scores-a_scores.mean())/(a_scores.std()))
+
+    scores = scores_diff 
+
+    nodes_idx = np.array(nodes_idx)
+    embed = torch.mm(adj[nodes_idx][:,nodes_idx],embed[nodes_idx])
+    embed = embed.cpu().numpy()
+    distances = pairwise_distances(embed, embed)
+
+    clusters, medoids = k_medoids(distances, k=cluster_n)
+    indices = torch.topk(scores[nodes_idx[medoids]], number, largest=True)[1]
+    indices = list(indices.cpu().numpy())
+    return nodes_idx[medoids][indices]
+
+def query_medoids_diff(embed, prob_nc, prob_ad, number, nodes_idx, cluster_n):
+    n_entropy = get_entropy_score(prob_nc).detach()
+    prob_ad = torch.softmax(prob_ad, dim=1)
+    a_scores = prob_ad[:,1]
+
+    scores_diff = torch.abs((n_entropy-n_entropy.mean())/(n_entropy.std()) - (a_scores-a_scores.mean())/(a_scores.std()))
+
+    scores = scores_diff 
+
+    nodes_idx = np.array(nodes_idx)
+    embed = embed.cpu().numpy()
+    distances = pairwise_distances(embed, embed)
+
+    clusters, medoids = k_medoids(distances[nodes_idx], k=cluster_n)
+    indices = torch.topk(scores[nodes_idx[medoids]], number, largest=True)[1]
+    indices = list(indices.cpu().numpy())
+    return nodes_idx[medoids][indices]
+
+def query_medoids_nent_diff(embed, prob_nc, prob_ad, number, nodes_idx, cluster_n, weight=0.5):
+    n_entropy = get_entropy_score(prob_nc).detach()
+    prob_ad = torch.softmax(prob_ad, dim=1)
+    a_entropy = get_entropy_score(prob_ad).detach()
+
+    scores_diff = torch.abs((n_entropy-n_entropy.mean())/(n_entropy.std()) - (a_entropy-a_entropy.mean())/(a_entropy.std()))
+
+    scores = weight * (n_entropy-n_entropy.mean())/(n_entropy.std()) + (1-weight) * scores_diff
+
+    nodes_idx = np.array(nodes_idx)
+    embed = embed.cpu().numpy()
+    distances = pairwise_distances(embed, embed)
+
+    clusters, medoids = k_medoids(distances[nodes_idx], k=cluster_n)
+    indices = torch.topk(scores[nodes_idx[medoids]], number, largest=True)[1]
+    indices = list(indices.cpu().numpy())
+    return nodes_idx[medoids][indices]
+
+
+def query_nent_ascore(prob_nc, prob_ad, number, nodes_idx, weight):
+    entropy = get_entropy_score(prob_nc).detach()
     prob_ad = torch.softmax(prob_ad, dim=1)
     pred_ascores = prob_ad[:,1]
 
-    scores = weight * (entropy-entropy.min())/(entropy.max()-entropy.min()) + (1-weight) * (pred_ascores-pred_ascores.min())/(pred_ascores.max()-pred_ascores.min())
+    scores = weight * (entropy-entropy.mean())/(entropy.std()) + (1-weight) * (pred_ascores-pred_ascores.mean())/(pred_ascores.std())
 
     indices = torch.topk(scores[nodes_idx], number, largest=True)[1]
     indices = list(indices.cpu().numpy())
@@ -175,15 +226,38 @@ def query_topk_nent_ascore(prob_nc, prob_ad, number, nodes_idx, weight):
 
 
 def query_topk_nent_aent(prob_nc, prob_ad, number, nodes_idx, weight):
-    entropy = get_entropy_score(prob_nc)
+    entropy = get_entropy_score(prob_nc).detach()
     prob_ad = torch.softmax(prob_ad, dim=1)
-    a_entropy = get_entropy_score(prob_ad)
+    a_entropy = get_entropy_score(prob_ad).detach()
 
     scores = weight * (entropy-entropy.min())/(entropy.max()-entropy.min()) + (1-weight) * (a_entropy-a_entropy.min())/(a_entropy.max()-a_entropy.min())
     indices = torch.topk(scores[nodes_idx], number, largest=True)[1]
     indices = list(indices.cpu().numpy())
     return np.array(nodes_idx)[indices]
 
+
+def query_diff(prob_nc, prob_ad, number, nodes_idx):
+    n_entropy = get_entropy_score(prob_nc).detach()
+    prob_ad = torch.softmax(prob_ad, dim=1)
+    pred_ascores = prob_ad[:,1]
+
+    scores = torch.abs((n_entropy-n_entropy.mean())/(n_entropy.std()) - (pred_ascores-pred_ascores.mean())/(pred_ascores.std()))
+    indices = torch.topk(scores[nodes_idx], number, largest=True)[1]
+    indices = list(indices.cpu().numpy())
+    return np.array(nodes_idx)[indices]
+
+def query_nent_diff(prob_nc, prob_ad, number, nodes_idx, weight):
+    n_entropy = get_entropy_score(prob_nc).detach()
+    prob_ad = torch.softmax(prob_ad, dim=1)
+    a_scores = prob_ad[:,1]
+
+    scores_diff = torch.abs((n_entropy-n_entropy.mean())/(n_entropy.std()) - (a_scores-a_scores.mean())/(a_scores.std()))
+
+    scores = weight * (n_entropy-n_entropy.mean())/(n_entropy.std()) + (1-weight) * scores_diff
+
+    indices = torch.topk(scores[nodes_idx], number, largest=True)[1]
+    indices = list(indices.cpu().numpy())
+    return np.array(nodes_idx)[indices]
 
 def return_community(number, nodes_idx, labels):
     unique_labels = torch.unique(labels)

@@ -99,12 +99,17 @@ def train_model(args, model, opt, features, adj, labels, ano_labels, idx_train_n
                     'NC-ACC:', "{:.5f}".format(nc_acc_val),
                     'NC-IDACC: ', "{:.5f}".format(nc_idacc_val))
 
+            from sklearn.metrics import roc_auc_score
+            entropy = get_entropy_score(prob_nc)
+            pred_ascores = torch.softmax(prob_ad, dim=1)[:,1]
+            scores = args.alpha * (entropy-entropy.min())/(entropy.max()-entropy.min()) + args.gamma * (pred_ascores-pred_ascores.min())/(pred_ascores.max()-pred_ascores.min())
+            mix_auc_val = roc_auc_score(ano_labels[idx_val].cpu().detach().numpy(),scores[idx_val].cpu().detach().numpy())
 
             # Save model untill loss does not decrease
             if epoch > early_stopping:                
-                if ad_auc_val + nc_idacc_val > best_val:
+                if mix_auc_val + nc_idacc_val > best_val:
                     best_iter = epoch
-                    best_val = ad_auc_val + nc_idacc_val
+                    best_val = mix_auc_val + nc_idacc_val
                     cur_p = 0
                     torch.save({
                         'epoch': epoch,
@@ -153,14 +158,19 @@ def test_model(model, features, adj, labels, ano_labels, idx_train_ad, idx_test)
         output = prob_nc
         entropy = get_entropy_score(output)
         pred_ascores = torch.softmax(prob_ad, dim=1)[:,1]
-        scores = (entropy-entropy.min())/(entropy.max()-entropy.min()) + (pred_ascores-pred_ascores.min())/(pred_ascores.max()-pred_ascores.min())
+        scores = args.alpha * (entropy-entropy.min())/(entropy.max()-entropy.min()) + args.gamma *(pred_ascores-pred_ascores.min())/(pred_ascores.max()-pred_ascores.min())
         mix_auc = roc_auc_score(ano_labels[idx_test].cpu().detach().numpy(),scores[idx_test].cpu().detach().numpy())
         mix_auc_f = roc_auc_score(ano_labels.cpu().detach().numpy(),scores.cpu().detach().numpy())
 
+        ent_auc = roc_auc_score(ano_labels[idx_test].cpu().detach().numpy(),entropy[idx_test].cpu().detach().numpy())
+        ent_auc_f = roc_auc_score(ano_labels.cpu().detach().numpy(),entropy.cpu().detach().numpy())
+
 
         print('Anomaly Detection Results')
-        print('F-AUC', "{:.5f}".format(mix_auc),
-              'T-AUC', "{:.5f}".format(mix_auc_f))
+        print('MIX-T-AUC', "{:.5f}".format(mix_auc),
+              'MIX-F-AUC', "{:.5f}".format(mix_auc_f),
+              'ENT-T-AUC', "{:.5f}".format(ent_auc),
+              'ENT-F-AUC', "{:.5f}".format(ent_auc_f))
             
         test_acc_nc = accuracy(prob_nc[idx_test], labels[idx_test])
         idx_test_id = idx_test[ano_labels[idx_test]==0]
@@ -173,7 +183,7 @@ def test_model(model, features, adj, labels, ano_labels, idx_train_ad, idx_test)
             'F1-Micro', "{:.5f}".format(test_f1micro_nc), 
             'F1-Macro', "{:.5f}".format(test_f1macro_nc))
         
-    return embed, prob_nc, prob_ad, test_acc_nc, test_acc_nc_id, test_f1micro_nc, test_f1macro_nc, test_auc_ad, test_f1macro_ad, test_pre_ad, test_rec_ad, abnormal_num, normal_num 
+    return embed, prob_nc, prob_ad, test_acc_nc, test_acc_nc_id, test_f1micro_nc, test_f1macro_nc, test_auc_ad,mix_auc,mix_auc_f,ent_auc, ent_auc_f, test_f1macro_ad, test_pre_ad, test_rec_ad, abnormal_num, normal_num 
 
 def pre_dgi(adj, features, hidden, dgi_epoch, dgi_lr, dgi_weight_decay, filename):
     cnt_wait = 0
@@ -278,18 +288,21 @@ def main(args):
         idx_train_ad = idx_train_ad.cuda()
         idx_train_nc = idx_train_nc.cuda()
 
-    if args.dataset in ['AmazonComputers', 'Flickr', 'AmazonPhoto']:
+    if args.dataset in ['AmazonComputers', 'AmazonPhoto']:
         hidden = 256
+    elif args.dataset in ['Flickr', 'pubmed']:
+        hidden = 128
     else: # BlogCatalog , 'cora'
         hidden = 512
 
-    # pre-train DGI
-    dgi_epoch = 1000
-    dgi_lr = 0.001
-    dgi_weight_decay = 0.0
-    dgi_model = pre_dgi(adj, features[np.newaxis], hidden, dgi_epoch, dgi_lr, dgi_weight_decay, filename)
-    dgi_embeds, _ = dgi_model.embed(features[np.newaxis], adj, True, None)
-    dgi_embeds = torch.squeeze(dgi_embeds, 0)
+    if args.model != 'Model0':
+        # pre-train DGI
+        dgi_epoch = 1000
+        dgi_lr = 0.001
+        dgi_weight_decay = 0.0
+        dgi_model = pre_dgi(adj, features[np.newaxis], hidden, dgi_epoch, dgi_lr, dgi_weight_decay, filename)
+        dgi_embeds, _ = dgi_model.embed(features[np.newaxis], adj, True, None)
+        dgi_embeds = torch.squeeze(dgi_embeds, 0)
 
     if args.model == 'Model1':
         features = torch.cat((dgi_embeds,features),dim=1)
@@ -334,9 +347,46 @@ def main(args):
                 idx_selected_ad = query_entropy(prob_ad, budget_ad, idx_cand_an.tolist())
             elif args.strategy_ad == 'topk_anomaly':
                 idx_selected_ad = query_topk_anomaly(prob_ad, budget_ad, idx_cand_an.tolist())
-            elif args.strategy_ad == 'k_medoids':
+            elif args.strategy_ad == 'k_medoids_emb':
+                weight = args.weight_tmp ** (len(idx_train_ad)-len(idx_train_nc))
+                idx_selected_ad = query_top2k_medoids_s(embed, prob_nc, prob_ad, budget_ad, idx_cand_an.tolist(), nb_classes, weight)
+            elif args.strategy_ad == 'k_medoids_in':
                 weight = args.weight_tmp ** (len(idx_train_ad)-len(idx_train_nc))
                 idx_selected_ad = query_top2k_medoids_s(features, prob_nc, prob_ad, budget_ad, idx_cand_an.tolist(), nb_classes, weight)
+            elif args.strategy_ad == 'k_medoids_cat':
+                weight = args.weight_tmp ** (len(idx_train_ad)-len(idx_train_nc))
+                idx_selected_ad = query_top2k_medoids_s(torch.cat((dgi_embeds,embed),dim=1), prob_nc, prob_ad, budget_ad, idx_cand_an.tolist(), nb_classes, weight)
+            elif args.strategy_ad == 'k_medoids_emb_diff':
+                if args.weight_tmp == 1:
+                    weight = 0.5
+                else:
+                    weight = args.weight_tmp ** (len(idx_train_ad)-len(idx_train_nc))
+                idx_selected_ad = query_top2k_medoids_diff(embed, prob_nc, prob_ad, budget_ad, idx_cand_an.tolist(), nb_classes, weight)
+            elif args.strategy_ad == 'k_medoids_emb_spec_diff':
+                if args.weight_tmp == 1:
+                    weight = 0.5
+                else:
+                    weight = args.weight_tmp ** (len(idx_train_ad)-len(idx_train_nc))
+                # idx_selected_ad = query_top2k_medoids_spec_diff(adj, torch.cat((embed, prob_nc),dim=1), prob_nc, prob_ad, budget_ad, idx_cand_an.tolist(), nb_classes, weight)
+                idx_selected_ad = query_top2k_medoids_spec_diff(adj, embed, prob_nc, prob_ad, budget_ad, idx_cand_an.tolist(), nb_classes, weight)
+            elif args.strategy_ad == 'k_medoids_emb_spec_diff1':
+                idx_selected_ad = query_top2k_medoids_spec_diff1(adj, embed, prob_nc, prob_ad, budget_ad, idx_cand_an.tolist(), nb_classes)
+            elif args.strategy_ad == 'k_medoids_emb_spec_diff2':
+                idx_selected_ad = query_top2k_medoids_spec_diff2(adj, embed, prob_nc, prob_ad, budget_ad, idx_cand_an.tolist(), nb_classes)
+            elif args.strategy_ad == 'k_medoids_emb_mean_diff':
+                if args.weight_tmp == 1:
+                    weight = 0.5
+                else:
+                    weight = args.weight_tmp ** (len(idx_train_ad)-len(idx_train_nc))
+                idx_selected_ad = query_top2k_medoids_mean_diff(embed, prob_nc, prob_ad, budget_ad, idx_cand_an.tolist(), nb_classes, weight)
+            elif args.strategy_ad == 'mix_diff':
+                if args.weight_tmp == 1:
+                    weight = 0.5
+                else:
+                    weight = args.weight_tmp ** (len(idx_train_ad)-len(idx_train_nc))
+                idx_selected_ad = query_topk_ent_diff_m(prob_nc, prob_ad, budget_ad, idx_cand_an.tolist(), weight)
+            elif args.strategy_ad == 'ent_diff':
+                idx_selected_ad = query_topk_ent_diff(prob_nc, prob_ad, budget_ad, idx_cand_an.tolist())
             elif args.strategy_ad == 'topk_mix':
                 weight = 0.5
                 idx_selected_ad = query_topk_nent_ascore(prob_nc, prob_ad, budget_ad, idx_cand_an.tolist(), weight)
@@ -359,7 +409,7 @@ def main(args):
 
         
     # Test model
-    embed, prob_nc, prob_ad, test_acc_nc, test_acc_nc_id, test_f1micro_nc, test_f1macro_nc, test_auc_ad, test_f1macro_ad, test_pre_ad, test_rec_ad, abnormal_num, normal_num = test_model(model, features, adj, labels, ano_label, idx_train_ad, idx_test)
+    embed, prob_nc, prob_ad, test_acc_nc, test_acc_nc_id, test_f1micro_nc, test_f1macro_nc, test_auc_ad,mix_auc,mix_auc_f,ent_auc, ent_auc_f, test_f1macro_ad, test_pre_ad, test_rec_ad, abnormal_num, normal_num = test_model(model, features, adj, labels, ano_label, idx_train_ad, idx_test)
 
     # Save results
     import csv
@@ -368,12 +418,12 @@ def main(args):
     if not os.path.exists(des_path):
         with open(des_path,'w+') as f:
             csv_write = csv.writer(f)
-            csv_head = ["model", "seed", "dataset", "lr","embedding_dim", "dropout", "max_budget", "num_epochs", "strategy_ad","weight_tmp", "un_loss_type", "alpha", "beta","gamma", "nc-acc", "nc-idacc", "nc-f1-micro", "nc-f1-macro", "ad-auc", "ad-f1-macro", "ad-pre-macro", "ad-rec-macro", "A-num", "N-num", "nc_num"]
+            csv_head = ["model", "seed", "dataset", "lr","embedding_dim", "dropout", "max_budget", "num_epochs", "strategy_ad","weight_tmp", "un_loss_type", "alpha", "beta","gamma", "nc-acc", "nc-idacc", "nc-f1-micro", "nc-f1-macro", "ad-auc","ad-auc-m","ad-auc-e", "ad-f1-macro", "ad-pre-macro", "ad-rec-macro", "A-num", "N-num", "nc_num"]
             csv_write.writerow(csv_head)
 
     with open(des_path, 'a+') as f:
         csv_write = csv.writer(f)
-        data_row = [args.model, args.seed, args.dataset, args.lr, args.embedding_dim, args.dropout, args.max_budget, args.max_epoch, args.strategy_ad, args.weight_tmp, args.un_loss_type, args.alpha, args.beta,args.gamma, test_acc_nc, test_acc_nc_id, test_f1micro_nc, test_f1macro_nc, test_auc_ad, test_f1macro_ad, test_pre_ad, test_rec_ad, abnormal_num, normal_num, len(idx_train_nc)]
+        data_row = [args.model, args.seed, args.dataset, args.lr, args.embedding_dim, args.dropout, args.max_budget, args.max_epoch, args.strategy_ad, args.weight_tmp, args.un_loss_type, args.alpha, args.beta,args.gamma, test_acc_nc, test_acc_nc_id, test_f1micro_nc, test_f1macro_nc, test_auc_ad,mix_auc,ent_auc, test_f1macro_ad, test_pre_ad, test_rec_ad, abnormal_num, normal_num, len(idx_train_nc)]
         csv_write.writerow(data_row)
 
 
@@ -382,8 +432,8 @@ def main(args):
 if __name__ == '__main__':
     # Set argument
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str, default='Flickr')  # 'BlogCatalog'  'Flickr'  'ACM'  'cora'  'citeseer'  'pubmed'
-    parser.add_argument('--lr', type=float, default=0.01)
+    parser.add_argument('--dataset', type=str, default='AmazonPhoto')  # 'BlogCatalog'  'Flickr'  'ACM'  'cora'  'citeseer'  'pubmed'
+    parser.add_argument('--lr', type=float, default =0.01)
     parser.add_argument('--weight_decay', type=float, default=0.0005)
     parser.add_argument('--dropout', type=float, default=0.6)
     parser.add_argument('--seed', type=int, default=255)
@@ -394,12 +444,12 @@ if __name__ == '__main__':
     parser.add_argument('--alpha', type=float, default=.8, help='node classification loss weight')
     parser.add_argument('--beta', type=float, default=1., help='unsupervised loss weight')
     parser.add_argument('--gamma', type=float, default=.2, help='anomaly detection loss weight')
-    parser.add_argument('--weight_tmp', type=float, default=.96, help='anomaly detection loss weight')
-    parser.add_argument('--strategy_ad', type=str, default='k_medoids') # random uncertainty topk_anomaly
+    parser.add_argument('--weight_tmp', type=float, default=0.99)
+    parser.add_argument('--strategy_ad', type=str, default='k_medoids_emb_spec_diff') # random uncertainty topk_anomaly
     parser.add_argument('--device', type=int, default=0)
     parser.add_argument('--result_path', type=str, default='results/multitask')
     parser.add_argument('--un_loss_type', type=str, default='sup_sum') # sum div sup_sum sup_div
-    parser.add_argument('--model', type=str, default='Model1') # Model0 Model1 Model2
+    parser.add_argument('--model', type=str, default='Model0') # Model0 Model1 Model2
     args = parser.parse_args()
 
     torch.cuda.set_device(args.device)

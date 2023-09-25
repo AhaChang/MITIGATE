@@ -39,56 +39,11 @@ class GraphConvolution(Module):
         return self.__class__.__name__ + ' (' \
                + str(self.in_features) + ' -> ' \
                + str(self.out_features) + ')'
-    
-
-class Encoder(nn.Module):
-    def __init__(self, nfeat, nhid, dropout):
-        super(Encoder, self).__init__()
-
-        self.gc1 = GraphConvolution(nfeat, nhid)
-        self.gc2 = GraphConvolution(nhid, nhid)
-        self.dropout = dropout
-
-    def forward(self, x, adj):
-        x = F.relu(self.gc1(x, adj))
-        x = F.dropout(x, self.dropout, training=self.training)
-        x = F.relu(self.gc2(x, adj))
-        return x
 
 
-class Discriminator(nn.Module):
-    def __init__(self, nin, nout, dropout):
-        super(Discriminator, self).__init__()
-
-        self.lr1 = nn.Linear(nin, 16)
-        self.lr2 = nn.Linear(16, nout)
-        self.dropout = dropout
-
-    def forward(self, x):
-        x = F.relu(self.lr1(x))
-        x = F.dropout(x, self.dropout, training=self.training)
-        x = self.lr2(x)
-        return x
-
-
-class MultiTask(nn.Module):
+class Model(nn.Module):
     def __init__(self, nfeat, nhid, nout, dropout):
-        super(MultiTask, self).__init__()
-
-        self.encoder = Encoder(nfeat, nhid, dropout)
-        self.dis_neighbor = Discriminator(nhid, nout, dropout)
-        self.dis_anomaly = Discriminator(nhid, 2, dropout) 
-
-    def forward(self, x, adj):
-        x = self.encoder(x, adj)
-        pred_nc = self.dis_neighbor(x)
-        pred_ad = self.dis_anomaly(x)
-        return x, pred_nc, pred_ad
-
-
-class Model1(nn.Module):
-    def __init__(self, nfeat, nhid, nout, dropout):
-        super(Model1, self).__init__()
+        super(Model, self).__init__()
 
         self.gc1 = GraphConvolution(nfeat, nhid)
         self.gc2 = GraphConvolution(nhid, nout)
@@ -101,80 +56,3 @@ class Model1(nn.Module):
         pred_nc = self.gc2(x, adj)
         pred_ad = self.dis_anomaly(x)
         return embed, pred_nc, pred_ad
-
-
-class Model2(nn.Module):
-    def __init__(self, nfeat, nhid, nout, dropout):
-        super(Model2, self).__init__()
-
-        self.gc1 = GraphConvolution(nfeat, nout)
-        self.lr = nn.Linear(nfeat, 2) 
-        self.dropout = dropout
-
-    def forward(self, x, adj):
-        pred_nc = self.gc1(x, adj)
-        pred_ad = self.lr(x)
-        return x, pred_nc, pred_ad
-
-
-class NCModel(nn.Module):
-    def __init__(self, nfeat, nhid, nout, dropout) -> None:
-        super(NCModel, self).__init__()
-
-        self.gc1 = GraphConvolution(nfeat, nhid)
-        self.gc2 = GraphConvolution(nhid, nout)
-        self.dropout = dropout
-
-    def forward(self, x, adj):
-        embed = self.gc1(x, adj)
-        x = F.dropout(F.relu(embed), self.dropout, training=self.training)
-        x = F.relu(self.gc2(x, adj))
-        return embed, x
-
-
-class ADModel(nn.Module):
-    def __init__(self, nfeat, nhid, nout, dropout) -> None:
-        super(ADModel, self).__init__()
-
-        self.gc1 = GraphConvolution(nfeat, nhid)
-        self.dis_anomaly = nn.Linear(nhid, nout) 
-        self.dropout = dropout
-
-    def forward(self, x, adj):
-        embed = self.gc1(x, adj)
-        x = F.dropout(F.relu(embed), self.dropout, training=self.training)
-        pred_ad = self.dis_anomaly(x)
-        return embed, pred_ad
-
-
-import layers
-
-class DGI(nn.Module):
-    def __init__(self, n_in, n_h, activation):
-        super(DGI, self).__init__()
-        # self.fc = nn.Linear(n_in, n_h)
-        self.gcn = layers.GCN(n_in, n_h, activation)
-        self.read = layers.AvgReadout()
-        self.act = nn.PReLU()
-
-        self.sigm = nn.Sigmoid()
-
-        self.disc = layers.Discriminator(n_h)
-
-    def forward(self, x_1, x_2, adj, sparse, msk, samp_bias1, samp_bias2):
-        h_1 = self.gcn(x_1, adj, sparse)
-
-        c = self.read(h_1, msk)
-        c = self.sigm(c)
-        h_2 = self.gcn(x_2, adj, sparse)
-
-        ret = self.disc(c, h_1, h_2, samp_bias1, samp_bias2)
-        return ret
-
-    # Detach the return variables
-    def embed(self, seq, adj, sparse, msk):
-        h_1 = self.gcn(seq, adj, sparse)
-        # h_1 = self.sigm(self.fc(seq))
-        c = self.read(h_1, msk)
-
-        return h_1.detach(), c.detach()
