@@ -92,7 +92,7 @@ def select_ad(dataset, directory, ad_num):
 #     num_val = 500
 #     num_test = 1000
     
-#     for dataset in ['cora', 'citeseer', 'pubmed', 'BlogCatalog', 'Flickr', 'AmazonComputers', 'AmazonPhoto']:
+#     for dataset in ['cora', 'citeseer', 'BlogCatalog', 'Flickr']:
 
 #         directory = "splited_data/" + dataset + "/"
 
@@ -111,7 +111,7 @@ if __name__ == '__main__':
     np.random.seed(seed)
     random.seed(seed)
 
-    for dataset in ['cora', 'citeseer', 'pubmed', 'BlogCatalog', 'Flickr', 'AmazonComputers', 'AmazonPhoto']:
+    for dataset in ['cora', 'citeseer', 'BlogCatalog', 'Flickr']:
         directory = "splited_data/" + dataset + "/"
 
         data = sio.loadmat("./dataset/{}.mat".format(dataset))
