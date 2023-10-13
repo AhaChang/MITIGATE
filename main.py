@@ -222,6 +222,7 @@ def main(args):
     # Train model
     budget_ad = args.iter_budget * 2
     iter_num = args.max_budget // args.iter_budget
+    results_iter = {}
 
     for iter in range(iter_num + 1):
         
@@ -255,7 +256,7 @@ def main(args):
             elif args.strategy_ad == 'medoids_spec_nent_diff':
                 idx_selected_ad = query_medoids_spec_nent_diff(adj, embed, prob_nc, prob_ad, budget_ad, idx_cand_an.tolist(), args.cluster_num, weight)
             elif args.strategy_ad == 'medoids_spec_nent':
-                idx_selected_ad = query_medoids_spec_nent(adj, embed, prob_nc, prob_ad, budget_ad, idx_cand_an.tolist(), args.cluster_num)
+                idx_selected_ad = query_medoids_spec_nent(adj, embed, prob_nc, budget_ad, idx_cand_an.tolist(), args.cluster_num)
             elif args.strategy_ad == 'medoids_nent_diff':
                 idx_selected_ad = query_medoids_nent_diff(embed, prob_nc, prob_ad, budget_ad, idx_cand_an.tolist(), args.cluster_num, weight)
             
@@ -264,35 +265,42 @@ def main(args):
             else:
                 raise ValueError("AD Strategy is not defined")
 
+            print('Selected! ')
+
+            # Save embeddings and selected node index
+            results_iter[iter]={'embeds':embed.detach().cpu().numpy(),'cur_selected':idx_selected_ad,'pre_selected':idx_train_ad.detach().cpu().numpy()}
+
             # Update state
             state_an[idx_selected_ad] = 1
             idx_train_ad = torch.cat((idx_train_ad, torch.tensor(idx_selected_ad).cuda()))
 
-            print('Selected! ')
-
+    # 保存字典到 Pickle 文件
+    import pickle
+    with open('results_iter/'+args.strategy_ad + '_' + args.dataset+'.pkl', 'wb') as pickle_file:
+        pickle.dump(results_iter, pickle_file)
 
 
 if __name__ == '__main__':
     # Set argument
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str, default='BlogCatalog')  # 'BlogCatalog'  'Flickr'  'cora'  'citeseer' 
+    parser.add_argument('--dataset', type=str, default='cora')  # 'BlogCatalog'  'Flickr'  'cora'  'citeseer' 
     parser.add_argument('--lr', type=float, default =0.01)
     parser.add_argument('--weight_decay', type=float, default=0.0005)
     parser.add_argument('--dropout', type=float, default=0.6)
-    parser.add_argument('--seed', type=int, default=255)
+    parser.add_argument('--seed', type=int, default=800)
     parser.add_argument('--embedding_dim', type=int, default=64)
     parser.add_argument('--max_epoch', type=int, default=300)
-    parser.add_argument('--max_budget', type=int, default=20)
+    parser.add_argument('--max_budget', type=int, default=40)
     parser.add_argument('--iter_budget', type=int, default=2)
-    parser.add_argument('--alpha', type=float, default=1, help='node classification loss weight')
-    parser.add_argument('--beta', type=float, default=1, help='anomaly detection loss weight')
+    parser.add_argument('--alpha', type=float, default=1.25, help='node classification loss weight')
+    parser.add_argument('--beta', type=float, default=0.5, help='anomaly detection loss weight')
     parser.add_argument('--gamma', type=float, default=1, help='unsupervised loss weight')
-    parser.add_argument('--phi', type=float, default=2, help='anoamly score weight')
-    parser.add_argument('--weight_tmp', type=float, default=0.99)
+    parser.add_argument('--phi', type=float, default=1.25, help='anoamly score weight')
+    parser.add_argument('--weight_tmp', type=float, default=0.95)
     parser.add_argument('--strategy_ad', type=str, default='medoids_spec_nent_diff')
     parser.add_argument('--device', type=int, default=0)
     parser.add_argument('--result_path', type=str, default='results/multitask')
-    parser.add_argument('--cluster_num', type=int, default=18)
+    parser.add_argument('--cluster_num', type=int, default=24)
 
     args = parser.parse_args()
 
