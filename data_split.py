@@ -127,3 +127,4 @@ if __name__ == '__main__':
                 idx_ad = select_ad(dataset, directory, ad_num)
             
             print(label[idx_ad].sum())
+            
