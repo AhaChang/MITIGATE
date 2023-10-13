@@ -49,14 +49,14 @@ def load_citation_datadet(dataset_str):
     names = ['x', 'y', 'tx', 'ty', 'allx', 'ally', 'graph']
     objects = []
     for i in range(len(names)):
-        with open("baselines/CoLA/raw_dataset/{}/ind.{}.{}".format(dataset_str, dataset_str, names[i]), 'rb') as f:
+        with open("raw_dataset/{}/ind.{}.{}".format(dataset_str, dataset_str, names[i]), 'rb') as f:
             if sys.version_info > (3, 0):
                 objects.append(pkl.load(f, encoding='latin1'))
             else:
                 objects.append(pkl.load(f))
 
     x, y, tx, ty, allx, ally, graph = tuple(objects)
-    test_idx_reorder = parse_index_file("baselines/CoLA/raw_dataset/{}/ind.{}.test.index".format(dataset_str, dataset_str))
+    test_idx_reorder = parse_index_file("raw_dataset/{}/ind.{}.test.index".format(dataset_str, dataset_str))
     test_idx_range = np.sort(test_idx_reorder)
 
     if dataset_str == 'citeseer':
@@ -86,7 +86,7 @@ def load_citation_datadet(dataset_str):
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--dataset', type=str, default='AmazonComputers')  #'BlogCatalog'  'Flickr' 'cora'  'citeseer'  'pubmed' 
+parser.add_argument('--dataset', type=str, default='cora')  #'BlogCatalog'  'Flickr' 'cora'  'citeseer'   
 parser.add_argument('--seed', type=int, default=1)  #random seed
 parser.add_argument('--m', type=int, default=15)  #num of fully connected nodes
 parser.add_argument('--n', type=int)  
@@ -95,10 +95,10 @@ args = parser.parse_args()
 
 
 AD_dataset_list = ['BlogCatalog', 'Flickr']
-Citation_dataset_list = ['cora', 'citeseer', 'pubmed']
+Citation_dataset_list = ['cora', 'citeseer']
 
 # Set hyperparameters of disturbing
-dataset_str = args.dataset  #'BlogCatalog'  'Flickr' 'cora'  'citeseer'  'pubmed'
+dataset_str = args.dataset  #'BlogCatalog'  'Flickr' 'cora'  'citeseer'
 seed = args.seed
 m = args.m  #num of fully connected nodes  #10 15 20   5
 k = args.k
@@ -108,12 +108,8 @@ if args.n is None:
         n = 5
     elif dataset_str == 'BlogCatalog':
         n = 10
-    elif dataset_str == 'Flickr' or dataset_str == 'AmazonPhoto':
+    elif dataset_str == 'Flickr':
         n = 15
-    elif dataset_str == 'pubmed':
-        n = 20
-    elif dataset_str == 'AmazonComputers':
-        n = 25
 else:
     n = args.n
 
