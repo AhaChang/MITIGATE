@@ -11,6 +11,6 @@ This code requires the following:
 ## Usage
 Take Cora dataset as an example:
 ```
-python main.py  --dataset cora --strategy_ad medoids_spec_nent_diff --result_path results/cora --device 0 --alpha $alpha --beta $beta --gamma 1 --cluster_num $c_num --weight_tmp $weight_tmp --max_budget $budget  --phi $phi 
+python main.py  --dataset cora --strategy_ad medoids_spec_nent_diff --device 0 --alpha 1.25 --beta 0.5 --gamma 1 --cluster_num 24 --tau 0.95  --phi 1.25 
 ```
 The hyperparameters for other datasets are reported in our paper.
