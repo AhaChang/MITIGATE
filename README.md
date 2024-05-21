@@ -1,4 +1,4 @@
-# Multitask Active Learning for Graph Anomaly Detection
+# Leveraging Active Learning with Auxiliary Task for Graph Anomaly Detection
 
 ## Requirements
 This code requires the following:
