@@ -22,3 +22,5 @@ The hyperparameters for other datasets are reported as follows.
 |  $\beta$ | 0.50 |   2.00   |     1.00    |  0.50  | 0.8    | 1.25    |
 |  $\phi$  | 1.25 |   2.00   |     1.00    |  0.50  | 10     | 8.0     |
 |    $m$   |  24  |    24    |      18     |   27   | 10     | 20      |
+
+The Amazon and YelpChi datasets can be found from [GADBench](https://github.com/squareRoot3/GADBench).
