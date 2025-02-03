@@ -17,10 +17,10 @@ The hyperparameters for other datasets are reported as follows.
 
 |          | Cora | Citeseer | BlogCatalog | Flickr | Amazon | YelpChi |
 |:--------:|:----:|:--------:|:-----------:|:------:|--------|---------|
-|  $\tau$  | 0.95 |   0.90   |     0.98    |  0.98  | 0.98   | 0.985   |
-| $\alpha$ | 1.25 |   0.50   |     1.25    |  1.25  | 1.25   | 0.5     |
-|  $\beta$ | 0.50 |   2.00   |     1.00    |  0.50  | 0.8    | 1.25    |
-|  $\phi$  | 1.25 |   2.00   |     1.00    |  0.50  | 10     | 8.0     |
+|  $\tau$  | 0.95 |   0.90   |     0.98    |  0.98  | 0.999  | 0.80    |
+| $\alpha$ | 1.25 |   0.50   |     1.25    |  1.25  | 1.00   | 0.40    |
+|  $\beta$ | 0.50 |   2.00   |     1.00    |  0.50  | 1.00   | 1.25    |
+|  $\phi$  | 1.25 |   2.00   |     1.00    |  0.50  | 10     | 10      |
 |    $m$   |  24  |    24    |      18     |   27   | 10     | 20      |
 
 The Amazon and YelpChi datasets can be found from [GADBench](https://github.com/squareRoot3/GADBench).
